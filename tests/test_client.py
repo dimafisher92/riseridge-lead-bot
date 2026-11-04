@@ -28,6 +28,8 @@ def make(*responses):
 
 
 def test_sends_auth_version_and_json():
+    from leadbot.ghl.client import USER_AGENT
+
     client, rec, _ = make((201, {"tag": {"id": "t1", "name": "bot-lead"}}, {}))
     assert client.create_tag("bot-lead") == {"id": "t1", "name": "bot-lead"}
     method, url, headers, body = rec.calls[0]
@@ -35,6 +37,8 @@ def test_sends_auth_version_and_json():
     assert url == "https://services.leadconnectorhq.com/locations/LOC1/tags"
     assert headers["Authorization"] == f"Bearer {TOKEN}"
     assert headers["Version"] == "2021-07-28"
+    assert headers["User-Agent"] == USER_AGENT
+    assert not headers["User-Agent"].startswith("Python-urllib")
     assert body == {"name": "bot-lead"}
 
 
@@ -61,6 +65,17 @@ def test_auth_error_names_scopes_and_hides_token():
     with pytest.raises(GHLAuthError) as exc:
         client.list_tags()
     assert "scopes" in str(exc.value)
+    assert TOKEN not in str(exc.value)
+
+
+def test_cloudflare_1010_403_names_user_agent_and_hides_token():
+    client, _, _ = make((403, {"title": "Error 1010: Access denied", "status": 403}, {}))
+    with pytest.raises(GHLAuthError) as exc:
+        client.list_tags()
+    assert exc.value.status == 403
+    assert exc.value.message == (
+        "Cloudflare blocked the request (error 1010); check the User-Agent header")
+    assert "scopes" not in str(exc.value)
     assert TOKEN not in str(exc.value)
 
 

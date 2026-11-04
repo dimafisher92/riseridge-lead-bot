@@ -8,8 +8,12 @@ import urllib.request
 
 BASE_URL = "https://services.leadconnectorhq.com"
 API_VERSION = "2021-07-28"
+# Cloudflare in front of services.leadconnectorhq.com returns 403 "Error 1010" to the
+# default Python-urllib User-Agent, so every request must send this custom one.
+USER_AGENT = "riseridge-leadbot/0.1"
 SCOPE_HINT = ("Check the Private Integration token scopes: contacts, opportunities, "
               "custom fields and tags (read and write), and pipelines.")
+CLOUDFLARE_1010_HINT = "Cloudflare blocked the request (error 1010); check the User-Agent header"
 
 
 class GHLError(Exception):
@@ -50,6 +54,13 @@ def _message(payload):
     return str(payload)[:200]
 
 
+def _is_cloudflare_1010(payload):
+    if not isinstance(payload, dict):
+        return False
+    text = f"{payload.get('title', '')} {payload.get('message', '')}"
+    return "Error 1010" in text
+
+
 def _retry_delay(headers, attempt):
     for key, value in headers.items():
         if key.lower() == "retry-after":
@@ -80,6 +91,7 @@ class GHLClient:
             "Authorization": f"Bearer {self._token}",
             "Version": API_VERSION,
             "Accept": "application/json",
+            "User-Agent": USER_AGENT,
         }
         data = None
         if body is not None:
@@ -93,6 +105,8 @@ class GHLClient:
                 self._sleep(_retry_delay(resp_headers, attempt))
                 continue
             payload = _decode(raw)
+            if status == 403 and _is_cloudflare_1010(payload):
+                raise GHLAuthError(status, CLOUDFLARE_1010_HINT)
             if status in (401, 403):
                 raise GHLAuthError(status, f"{_message(payload)}. {SCOPE_HINT}")
             if status >= 400:
