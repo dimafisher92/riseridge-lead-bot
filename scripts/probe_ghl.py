@@ -14,6 +14,9 @@ def keys(obj):
 
 def main():
     c = client_from_env()
+    loc = c.request("GET", f"/locations/{c.location_id}")
+    loc = loc.get("location", loc) if isinstance(loc, dict) else {}
+    print(f"location name: {loc.get('name')}  (confirm this is the RiseRidge sub-account)")
     pipelines = c.list_pipelines()
     print(f"pipelines: {len(pipelines)}; pipeline keys: {keys(pipelines[0]) if pipelines else '-'}")
     if pipelines and pipelines[0].get("stages"):
