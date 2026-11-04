@@ -1,0 +1,2 @@
+# Test dependency only. The package itself is stdlib.
+pytest==9.1.1
