@@ -8,9 +8,10 @@ stages = ["New", "Contacted", "Conversation", "Audit Sent", "Proposal", "Won", "
 entry_stage = "New"
 
 [duplicate]
-# Tags that mark an existing client in this sub-account. Filled in Task 6
-# from the browser check. Empty means only the lost-deal rule applies.
+# Existing client = a contact tag in client_tags, ANY won opportunity, or ANY
+# opportunity in a client_pipelines pipeline (all must exist in the account).
 client_tags = []
+client_pipelines = ["02. GSM Appointment New Client"]
 lost_window_days = 90
 
 [tags]

@@ -16,6 +16,7 @@ class Context:
     field_ids: dict
     pipeline_id: str
     stage_ids: dict
+    client_pipeline_ids: tuple = ()
 
 
 @dataclass
@@ -35,10 +36,19 @@ def load_context(client, schema):
         missing.append(f"pipeline {schema.pipeline_name}")
     elif schema.entry_stage not in {s["name"] for s in pipeline.get("stages", [])}:
         missing.append(f"stage {schema.entry_stage} in pipeline {schema.pipeline_name}")
+    pipelines = client.list_pipelines()
+    client_pipeline_ids = []
+    for name in schema.client_pipelines:
+        found = next((q for q in pipelines if q["name"].lower() == name.lower()), None)
+        if found is None:
+            missing.append(f"client pipeline {name}")
+        else:
+            client_pipeline_ids.append(found["id"])
     if missing:
         raise SetupIncomplete("run scripts/setup_ghl.py; missing: " + ", ".join(missing))
     stage_ids = {s["name"]: s["id"] for s in pipeline.get("stages", [])}
-    return Context({f.name: by_name[f.name] for f in schema.fields}, pipeline["id"], stage_ids)
+    return Context({f.name: by_name[f.name] for f in schema.fields}, pipeline["id"], stage_ids,
+                   tuple(client_pipeline_ids))
 
 
 def _status_date(opportunity):
@@ -50,15 +60,22 @@ def _status_date(opportunity):
     return dt.datetime.fromisoformat(raw.replace("Z", "+00:00")).date()
 
 
-def _duplicate_reason(client, schema, existing, today):
+def _duplicate_reason(client, schema, ctx, existing, today):
     # The duplicate-search response has no documented schema; read tags from the contact.
     contact = client.get_contact(existing["id"]) or {}
     tags = {t.lower() for t in contact.get("tags") or []}
     for marker in schema.client_tags:
         if marker.lower() in tags:
             return f"existing client (tag {marker})"
+    opps = client.search_opportunities(existing["id"], status="all")
+    if any(o.get("status") == "won" for o in opps):
+        return "existing client (won deal)"
+    if any(o.get("pipelineId") in ctx.client_pipeline_ids for o in opps):
+        return "existing client (new-client pipeline)"
     cutoff = today - dt.timedelta(days=schema.lost_window_days)
-    for opp in client.search_opportunities(existing["id"], status="lost"):
+    for opp in opps:
+        if opp.get("status") != "lost":
+            continue
         changed = _status_date(opp)
         if changed and changed >= cutoff:
             return f"deal lost on {changed.isoformat()}"
@@ -88,7 +105,7 @@ def push_lead(client, schema, ctx, payload, *, extra_tags=(), today=None):
     try:
         existing = _find_existing(client, payload)
         if existing:
-            reason = _duplicate_reason(client, schema, existing, today)
+            reason = _duplicate_reason(client, schema, ctx, existing, today)
             if reason:
                 client.add_tags(existing["id"], ["bot-dupe"])
                 return PushResult("duplicate", existing["id"], message=reason)

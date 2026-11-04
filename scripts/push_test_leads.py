@@ -43,15 +43,17 @@ def remember(ledger, contact_id=None, opportunity_id=None):
 
 def seed(client, schema, ctx, ledger):
     if "client" not in ledger["seeds"]:
-        if not schema.client_tags:
-            raise SystemExit("client_tags is empty in config/ghl_schema.toml (Task 6 step 4)")
         c, _ = client.upsert_contact({"locationId": client.location_id, "country": "US",
                                       "name": SEEDS["client"]["name"],
                                       "phone": SEEDS["client"]["phone"]})
         remember(ledger, c["id"])
-        client.add_tags(c["id"], [schema.client_tags[0], "bot-test"])
+        client.add_tags(c["id"], ["bot-test"])
+        opp = client.create_opportunity({
+            "pipelineId": ctx.pipeline_id, "pipelineStageId": ctx.stage_ids["Won"],
+            "locationId": client.location_id, "name": "Test Seed Existing Client",
+            "status": "won", "contactId": c["id"]})
         ledger["seeds"]["client"] = c["id"]
-        remember(ledger, c["id"])
+        remember(ledger, c["id"], opp["id"])
     if "lost" not in ledger["seeds"]:
         c, _ = client.upsert_contact({"locationId": client.location_id, "country": "US",
                                       "name": SEEDS["lost"]["name"],

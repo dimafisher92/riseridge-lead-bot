@@ -55,6 +55,7 @@ class Schema:
     fields: tuple
     signals: dict
     signal_tags: dict
+    client_pipelines: tuple = ()
 
     def field(self, name):
         for f in self.fields:
@@ -105,6 +106,7 @@ def load_schema(path=DEFAULT_SCHEMA_PATH):
         fields=fields,
         signals=dict(raw["signals"]),
         signal_tags=dict(raw["signal_tags"]),
+        client_pipelines=tuple(raw["duplicate"].get("client_pipelines", ())),
     )
     _validate(schema)
     return schema

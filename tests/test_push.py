@@ -22,6 +22,7 @@ def schema():
 def client(schema):
     c = FakeClient()
     run_setup(c, schema)
+    c.create_pipeline("02. GSM Appointment New Client", ["New client!"])
     for f in schema.fields:
         if f.created_by == "ui":
             c.fields.append({"id": "ui-" + f.name, "name": f.name, "dataType": f.data_type,
@@ -49,6 +50,12 @@ def test_load_context_reports_missing_entry_stage(client, schema):
     for p in client.pipelines:
         p["stages"] = [s for s in p["stages"] if s["name"] != "New"]
     with pytest.raises(SetupIncomplete, match="stage New"):
+        load_context(client, schema)
+
+
+def test_load_context_reports_missing_client_pipeline(client, schema):
+    client.pipelines[:] = [p for p in client.pipelines if p["name"] != "02. GSM Appointment New Client"]
+    with pytest.raises(SetupIncomplete, match="pipeline 02. GSM Appointment New Client"):
         load_context(client, schema)
 
 
@@ -100,6 +107,48 @@ def test_existing_client_is_duplicate(client, schema, ctx):
     assert r.outcome == "duplicate"
     assert client.contacts[contact["id"]]["tags"] == ["client", "bot-dupe"]
     assert client.opportunities == {}
+
+
+def _existing_contact(client):
+    contact, _ = client.upsert_contact({"locationId": "LOC1", "phone": SAMPLE_PAYLOAD["phone"]})
+    return contact["id"]
+
+
+def test_won_deal_in_any_pipeline_is_existing_client(client, schema, ctx):
+    cid = _existing_contact(client)
+    client.create_opportunity({"contactId": cid, "pipelineId": "unrelated", "status": "won",
+                               "lastStatusChangeAt": "2020-01-01T10:00:00.000Z"})
+    r = push_lead(client, schema, ctx, lead(), today=TODAY)
+    assert r.outcome == "duplicate"
+    assert r.message == "existing client (won deal)"
+    assert len(client.opportunities) == 1
+
+
+def test_open_deal_in_new_client_pipeline_is_existing_client(client, schema, ctx):
+    cid = _existing_contact(client)
+    pipe = next(p for p in client.pipelines if p["name"] == "02. GSM Appointment New Client")
+    client.create_opportunity({"contactId": cid, "pipelineId": pipe["id"], "status": "open"})
+    r = push_lead(client, schema, ctx, lead(), today=TODAY)
+    assert r.outcome == "duplicate"
+    assert r.message == "existing client (new-client pipeline)"
+
+
+def test_open_deal_in_another_pipeline_is_not_a_duplicate(client, schema, ctx):
+    cid = _existing_contact(client)
+    client.create_opportunity({"contactId": cid, "pipelineId": "unrelated", "status": "open"})
+    r = push_lead(client, schema, ctx, lead(), today=TODAY)
+    assert r.outcome == "updated"
+    assert r.opportunity_id is not None
+
+
+def test_opportunity_rules_use_a_single_search(client, schema, ctx):
+    cid = _existing_contact(client)
+    client.create_opportunity({"contactId": cid, "pipelineId": "unrelated", "status": "open"})
+    searched = []
+    real = client.search_opportunities
+    client.search_opportunities = lambda *a, **k: (searched.append((a, k)), real(*a, **k))[1]
+    push_lead(client, schema, ctx, lead(), today=TODAY)
+    assert searched[0] == ((cid,), {"status": "all"})
 
 
 def test_lost_within_90_days_is_duplicate_but_older_is_not(client, schema, ctx):
