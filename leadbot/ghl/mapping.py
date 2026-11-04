@@ -82,7 +82,7 @@ def field_values(payload, schema):
         elif spec.name == PRIMARY_FIELD:
             value = primary_category(payload, schema)
         elif spec.data_type == "CHECKBOX":
-            if spec.source not in payload:
+            if payload.get(spec.source) is None:
                 continue
             value = [spec.options[0]] if payload[spec.source] else []
             values[spec.name] = value

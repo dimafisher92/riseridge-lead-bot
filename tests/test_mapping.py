@@ -61,6 +61,7 @@ def test_field_values_skip_missing_and_never_call_outcome(schema):
     assert values["All Signals"] == ["GBP Suspended", "Ad Waste", "Broken Site"]
     assert values["Meta Ads Active"] == ["Yes"]
     assert field_values(payload(meta_ads_active=False), schema)["Meta Ads Active"] == []
+    assert "Meta Ads Active" not in field_values(payload(meta_ads_active=None), schema)
 
 
 def test_contact_body_has_no_tags_and_uses_field_ids(schema, ids):
