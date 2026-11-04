@@ -47,6 +47,7 @@ def seed(client, schema, ctx, ledger):
         c, _ = client.upsert_contact({"locationId": client.location_id, "country": "US",
                                       "name": SEEDS["client"]["name"],
                                       "phone": SEEDS["client"]["phone"]})
+        remember(ledger, c["id"])
         client.add_tags(c["id"], [schema.client_tags[0], "bot-test"])
         ledger["seeds"]["client"] = c["id"]
         remember(ledger, c["id"])
@@ -54,6 +55,7 @@ def seed(client, schema, ctx, ledger):
         c, _ = client.upsert_contact({"locationId": client.location_id, "country": "US",
                                       "name": SEEDS["lost"]["name"],
                                       "phone": SEEDS["lost"]["phone"]})
+        remember(ledger, c["id"])
         client.add_tags(c["id"], ["bot-test"])
         opp = client.create_opportunity({
             "pipelineId": ctx.pipeline_id, "pipelineStageId": ctx.stage_ids["Lost"],

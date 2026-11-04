@@ -1,4 +1,7 @@
-"""Deletes every contact and opportunity in state/test_ledger.json, then verifies."""
+"""Deletes test contacts and opportunities, verifies they are gone, then reports.
+
+The ledger is removed only when the cleanup is clean. Exit 1 otherwise.
+"""
 
 import json
 import os
@@ -8,45 +11,31 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
 from leadbot.env import client_from_env  # noqa: E402
-from leadbot.ghl.client import GHLError  # noqa: E402
+from leadbot.ghl.cleanup import cleanup_test_data  # noqa: E402
 
 LEDGER = os.path.join(ROOT, "state", "test_ledger.json")
 
 
 def main():
-    if not os.path.exists(LEDGER):
-        print("No ledger; nothing to clean.")
-        return 0
-    with open(LEDGER, encoding="utf-8") as fh:
-        ledger = json.load(fh)
-    client = client_from_env()
+    ledger_exists = os.path.exists(LEDGER)
+    ledger = {"contacts": [], "opportunities": [], "seeds": {}}
+    if ledger_exists:
+        with open(LEDGER, encoding="utf-8") as fh:
+            ledger = json.load(fh)
+    result = cleanup_test_data(client_from_env(), ledger)
 
-    opp_ids = set(ledger["opportunities"])
-    for cid in ledger["contacts"]:
-        contact = client.get_contact(cid)
-        if contact is None:
-            continue
-        if "bot-test" not in (contact.get("tags") or []):
-            print(f"SKIP {cid}: no bot-test tag, not deleting")
-            continue
-        opp_ids.update(o["id"] for o in client.search_opportunities(cid, status="all"))
-    for oid in sorted(opp_ids):
-        try:
-            client.delete_opportunity(oid)
-        except GHLError as exc:
-            if exc.status not in (400, 404):
-                raise
-    for cid in ledger["contacts"]:
-        contact = client.get_contact(cid)
-        if contact and "bot-test" in (contact.get("tags") or []):
-            client.delete_contact(cid)
-
-    left = [cid for cid in ledger["contacts"] if client.get_contact(cid) is not None]
-    if left:
-        print(f"STILL PRESENT: {left}")
+    print(f"contacts deleted:      {len(result.contacts_deleted)}")
+    print(f"opportunities deleted: {len(result.opportunities_deleted)}")
+    for cid in result.skipped:
+        print(f"SKIP {cid}: no bot-test tag, not deleted")
+    for line in result.leftovers:
+        print(f"LEFTOVER {line}")
+    if not result.clean:
+        print("NOT CLEAN: ledger kept")
         return 1
-    os.remove(LEDGER)
-    print(f"Deleted {len(ledger['contacts'])} contacts and {len(opp_ids)} opportunities. CLEAN")
+    if ledger_exists:
+        os.remove(LEDGER)
+    print("CLEAN")
     return 0
 
 
