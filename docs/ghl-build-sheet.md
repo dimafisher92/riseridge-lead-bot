@@ -71,3 +71,16 @@ Pushed `TEST_LEADS[0]` (Hot, Counselors / therapists, tagged `bot-test`) with al
 - Cleanup: contact and opportunity deleted. The first run reported a leftover opportunity because `/opportunities/search` still listed the deal right after the delete while `GET /opportunities/{id}` already returned 404; cleanup now confirms each search hit with a direct GET. The rerun reported CLEAN and removed the ledger.
 
 Not yet exercised live: Warm branch, No answer / Callback / Not interested / Closed outcomes, Lost status, duplicates, Cold, and the 20-lead run.
+
+## 20-lead live test (2026-11-04)
+
+Client seed changed first (user decision): it carries the test-only tag `bot-test-client` instead of a won deal, and the push script adds that tag to the run's `client_tags`. Reason: the sub-account has about ten published won-deal workflows (for example "SEO Calendar — Deal Won → Meta CAPI Purchase", "Closed Deal (Won) -> Meta API", closed-deal Slack and bot notifications), so a test won deal could send a fake Purchase to Meta and a fake closed-deal alert to the team. The won-deal rule stays covered by unit tests; the live `status=all` search is still exercised by the lost seed.
+
+- First run: MATCH, 17 created, 2 duplicate (lead 17 "existing client (tag bot-test-client)", lead 18 "deal lost on 2026-11-04"), 1 rejected (no phone or email).
+- After the workflows ran (API check of every contact): all 6 Hot and 7 Warm (incl. the email-only lead) have Sergey as contact owner, one New/open deal owned by Sergey, and one call task: Hot due 2026-11-05 10:00 EST, Warm due 2026-11-06 10:00 EST. The 4 Cold have no deal and no task. Both seeds got `bot-dupe` and no `bot-lead`. No contact received any message other than GHL's opportunity activity entries.
+- Repeat run: MATCH, 13 existing, 4 updated, 2 duplicate, 1 rejected; still one deal and one task per Hot/Warm contact.
+- Cleanup: 19 contacts and 14 deals deleted, CLEAN, ledger removed.
+
+Side effect: Sergey received 13 in-app "New bot lead" notifications during the run; the tasks were removed with the contacts.
+
+Still not exercised live: No answer / Callback / Not interested / Closed outcomes, the Lost status workflow, and "Skip weekends" (a Friday push would show it).
