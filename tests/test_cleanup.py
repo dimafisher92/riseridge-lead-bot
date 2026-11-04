@@ -99,6 +99,23 @@ def test_surviving_opportunity_is_a_leftover(monkeypatch):
     assert result.clean is False
 
 
+def test_stale_search_hit_for_deleted_opportunity_is_not_a_leftover(monkeypatch):
+    # Live GHL: right after a delete, /opportunities/search still lists the
+    # deal for a few seconds while GET /opportunities/{id} already 404s.
+    c = FakeClient()
+    cid = _contact(c, PHONE, tags=["bot-test"])
+    oid = _opp(c, cid)
+    stale = [dict(c.opportunities[oid])]
+    real_search = c.search_opportunities
+    monkeypatch.setattr(c, "search_opportunities",
+                        lambda contact_id, **kw: stale if contact_id == cid
+                        else real_search(contact_id, **kw))
+    result = cleanup_test_data(c, _ledger([cid], [oid]))
+    assert oid not in c.opportunities
+    assert result.leftovers == []
+    assert result.clean is True
+
+
 def test_delete_contact_404_tolerated(monkeypatch):
     c = FakeClient()
     cid = _contact(c, PHONE, tags=["bot-test"])

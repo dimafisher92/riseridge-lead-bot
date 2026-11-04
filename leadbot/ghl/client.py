@@ -181,5 +181,14 @@ class GHLClient:
         data = self.request("POST", "/opportunities/", body=body)
         return data.get("opportunity", data)
 
+    def get_opportunity(self, opportunity_id):
+        try:
+            data = self.request("GET", f"/opportunities/{opportunity_id}")
+        except GHLError as exc:
+            if exc.status in (400, 404):
+                return None
+            raise
+        return data.get("opportunity", data)
+
     def delete_opportunity(self, opportunity_id):
         self.request("DELETE", f"/opportunities/{opportunity_id}")

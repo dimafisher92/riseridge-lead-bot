@@ -103,6 +103,10 @@ class FakeClient:
         self.opportunities[oid] = o
         return dict(o)
 
+    def get_opportunity(self, opportunity_id):
+        o = self.opportunities.get(opportunity_id)
+        return dict(o) if o else None
+
     def delete_opportunity(self, opportunity_id):
         self.calls.append(("delete_opportunity", opportunity_id))
         self.opportunities.pop(opportunity_id, None)

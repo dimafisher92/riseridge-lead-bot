@@ -103,9 +103,11 @@ def cleanup_test_data(client, ledger):
                 raise
         result.opportunities_deleted.append(oid)
 
+    # Search lags behind deletes for a few seconds; a direct GET is the truth.
     for cid in deletable:
         for oid in _opp_ids(client, cid):
-            result.leftovers.append(f"opportunity {oid} still on contact {cid}")
+            if client.get_opportunity(oid) is not None:
+                result.leftovers.append(f"opportunity {oid} still on contact {cid}")
 
     for cid in deletable:
         try:

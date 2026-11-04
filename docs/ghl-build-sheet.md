@@ -18,9 +18,9 @@ No client tag exists in this sub-account. Decision (user, 2026-11-04): a contact
 
 ## Workflows
 
-The public API only lists workflows (`GET /workflows/`, checked 2026-11-04), so all are built in the UI. All stay in Draft until the workflow audit (plan Task 11 Step 1) is done with the user.
+The public API only lists workflows (`GET /workflows/`, checked 2026-11-04), so all are built in the UI. All three were published on 2026-11-04. The full audit of existing workflows (plan Task 11 Step 1) was skipped by the user's choice, because the sub-account has 165 published workflows; a one-lead live test replaced it (below).
 
-### [Lead Bot] Route (Draft, built 2026-11-04)
+### [Lead Bot] Route (published, built 2026-11-04)
 
 URL: `/v2/location/qxOMqnU9zjuxJ3xHHo90/automation/workflow/6e777db8-c587-46cb-8a31-8ec212a23182`
 
@@ -34,7 +34,7 @@ URL: `/v2/location/qxOMqnU9zjuxJ3xHHo90/automation/workflow/6e777db8-c587-46cb-8
 
 Differences from the spec: one rep, so no niche branches; the notification is in-app, not email; "Skip weekends" on the Hot task may not have saved (check in the test); task titles use the merge picker because typed `{{...}}` tags are dropped by the title box.
 
-### [Lead Bot] Outcome (Draft, built 2026-11-04)
+### [Lead Bot] Outcome (published, built 2026-11-04)
 
 URL: `/v2/location/qxOMqnU9zjuxJ3xHHo90/automation/workflow/eb56f89a-8f0b-4e27-9a4a-cee6107a3d1c`
 
@@ -50,7 +50,7 @@ URL: `/v2/location/qxOMqnU9zjuxJ3xHHo90/automation/workflow/eb56f89a-8f0b-4e27-9
 
 Differences from the spec, to decide later: No answer does not yet count attempts (`bot-try-1..3`) or stop after 4 (the task text tells the rep to set Not interested after 4 tries); Not interested does not add `bot-nurture-90` (the Nurture stage is the hook for part C); part C placeholders (drip, audit email, onboarding) are not added as disabled steps.
 
-### [Lead Bot] Lost status (Draft, built 2026-11-04)
+### [Lead Bot] Lost status (published, built 2026-11-04)
 
 URL: `/v2/location/qxOMqnU9zjuxJ3xHHo90/automation/workflow/0b55de62-4eac-4f0f-b8a0-ef76da6aa101`
 
@@ -59,3 +59,15 @@ Trigger: Pipeline stage changed, In pipeline "Bot Leads – SEO", Pipeline stage
 ## Reps by niche
 
 One rep covers every niche (user, 2026-11-04): Sergey Vitrenko. The Route workflow therefore uses a single Assign To User step instead of six niche branches; add branches when more reps join.
+
+## One-lead live test (2026-11-04)
+
+Pushed `TEST_LEADS[0]` (Hot, Counselors / therapists, tagged `bot-test`) with all three workflows published.
+
+- Push: contact and opportunity created; 7 tags (`bot-lead`, `tier-hot`, `niche-counselors-therapists`, `sig-gbp`, `sig-ads`, `sig-site`, `bot-test`); 17 Lead Bot fields filled; Call Outcome not written.
+- Route: contact owner and opportunity owner both Sergey Vitrenko; task "Call: GBP Suspended" assigned to him, due 2026-11-05 10:00 EST (next day; "Skip weekends" cannot be judged from a weekday push).
+- Other workflows: the contact's Workflows panel listed no active enrolments, and its only conversation held two system activities ("Opportunity created", "Opportunity updated"): no SMS, email or call went out, and no foreign tag was added.
+- Outcome: Call Outcome set to Interested through the API; the deal was in Audit Sent when first polled (under 15 s). Closed was deliberately not tested: a won deal triggers the live "SEO Calendar — Deal Won → Meta CAPI Purchase" workflow.
+- Cleanup: contact and opportunity deleted. The first run reported a leftover opportunity because `/opportunities/search` still listed the deal right after the delete while `GET /opportunities/{id}` already returned 404; cleanup now confirms each search hit with a direct GET. The rerun reported CLEAN and removed the ledger.
+
+Not yet exercised live: Warm branch, No answer / Callback / Not interested / Closed outcomes, Lost status, duplicates, Cold, and the 20-lead run.

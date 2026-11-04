@@ -113,6 +113,17 @@ def test_get_contact_returns_none_on_404():
     assert client.get_contact("gone") is None
 
 
+def test_get_opportunity_returns_none_on_404():
+    client, _, _ = make((404, {"message": "not found"}, {}))
+    assert client.get_opportunity("gone") is None
+
+
+def test_get_opportunity_unwraps_body():
+    client, rec, _ = make((200, {"opportunity": {"id": "O1", "status": "open"}}, {}))
+    assert client.get_opportunity("O1") == {"id": "O1", "status": "open"}
+    assert rec.calls[0][1].endswith("/opportunities/O1")
+
+
 def test_create_pipeline_positions_stages():
     client, rec, _ = make((200, {"id": "P1", "name": "Bot"}, {}))
     client.create_pipeline("Bot", ["New", "Won"])
