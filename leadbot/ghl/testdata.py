@@ -15,6 +15,12 @@ SEEDS = {
     "lost": {"phone": "+15125550191", "name": "Test Seed Lost Deal"},
 }
 
+# The client seed is marked with this tag instead of a won deal: the live
+# sub-account has published won-deal workflows (Meta CAPI Purchase, closed-deal
+# notifications) that a test won deal would fire. The push script adds the tag
+# to the run's client_tags; the won-deal rule itself is covered by unit tests.
+CLIENT_SEED_TAG = "bot-test-client"
+
 TIER_SCORE = {"Hot": 82, "Warm": 55, "Cold": 30}
 
 

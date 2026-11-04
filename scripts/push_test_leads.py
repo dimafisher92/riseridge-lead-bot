@@ -1,6 +1,7 @@
 """Live test: seed two contacts, push the 20 test leads, compare outcome counts."""
 
 import argparse
+import dataclasses
 import json
 import os
 import sys
@@ -14,7 +15,7 @@ from leadbot.ghl.cleanup import find_collisions  # noqa: E402
 from leadbot.ghl.push import load_context, push_lead  # noqa: E402
 from leadbot.ghl.schema import load_schema  # noqa: E402
 from leadbot.ghl.testdata import (  # noqa: E402
-    EXPECTED_FIRST_RUN, EXPECTED_REPEAT_RUN, SEEDS, TEST_LEADS,
+    CLIENT_SEED_TAG, EXPECTED_FIRST_RUN, EXPECTED_REPEAT_RUN, SEEDS, TEST_LEADS,
 )
 
 LEDGER = os.path.join(ROOT, "state", "test_ledger.json")
@@ -43,17 +44,14 @@ def remember(ledger, contact_id=None, opportunity_id=None):
 
 def seed(client, schema, ctx, ledger):
     if "client" not in ledger["seeds"]:
+        # No won deal here: see CLIENT_SEED_TAG in testdata.
         c, _ = client.upsert_contact({"locationId": client.location_id, "country": "US",
                                       "name": SEEDS["client"]["name"],
                                       "phone": SEEDS["client"]["phone"]})
         remember(ledger, c["id"])
-        client.add_tags(c["id"], ["bot-test"])
-        opp = client.create_opportunity({
-            "pipelineId": ctx.pipeline_id, "pipelineStageId": ctx.stage_ids["Won"],
-            "locationId": client.location_id, "name": "Test Seed Existing Client",
-            "status": "won", "contactId": c["id"]})
+        client.add_tags(c["id"], ["bot-test", CLIENT_SEED_TAG])
         ledger["seeds"]["client"] = c["id"]
-        remember(ledger, c["id"], opp["id"])
+        save_ledger(ledger)
     if "lost" not in ledger["seeds"]:
         c, _ = client.upsert_contact({"locationId": client.location_id, "country": "US",
                                       "name": SEEDS["lost"]["name"],
@@ -73,6 +71,7 @@ def main(argv=None):
     ap.add_argument("--repeat", action="store_true", help="second run: expect existing/updated")
     args = ap.parse_args(argv)
     client, schema = client_from_env(), load_schema()
+    schema = dataclasses.replace(schema, client_tags=schema.client_tags + (CLIENT_SEED_TAG,))
     ctx = load_context(client, schema)
     ledger = load_ledger()
     collisions = find_collisions(client, ledger)
