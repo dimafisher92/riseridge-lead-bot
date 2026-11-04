@@ -84,3 +84,20 @@ Client seed changed first (user decision): it carries the test-only tag `bot-tes
 Side effect: Sergey received 13 in-app "New bot lead" notifications during the run; the tasks were removed with the contacts.
 
 Still not exercised live: No answer / Callback / Not interested / Closed outcomes, the Lost status workflow, and "Skip weekends" (a Friday push would show it).
+
+## Outcome and Lost status live test (2026-11-04)
+
+Pre-check: the three published stage-change workflows were opened in the builder. "LFF001. Stage Changed" is filtered to "Lead Form Pipeline", "VSL002. VSL - Stage Change" to "VSL Training", and "Pipeline Stage Changed to Pubbly" has 9 triggers, all on appointment bookings, "fb ad" tags or the "01. GSM Appointment" pipeline. None can fire on Bot Leads – SEO.
+
+Four Hot test leads (01-04), one action each, checked 40 s later:
+
+| Action | Result |
+| --- | --- |
+| Call Outcome = No answer | new task "Retry call: GBP Suspended", Sergey, due 2026-11-06 10:00 EST; deal stays New |
+| Call Outcome = Callback | new task "Callback: GBP Suspended", Sergey, due 2026-11-05 10:00 EST; deal stays New |
+| Call Outcome = Not interested | deal moved to Nurture, status open |
+| Deal moved to stage Lost (API) | Lost status workflow set status lost |
+
+No contact received any message other than GHL's opportunity activity entries. The original "Call:" task stays open after an outcome; the rep completes it. Cleanup: 4 contacts and 4 deals deleted, CLEAN.
+
+Closed was not run live: it sets the deal to won, which would fire the account's won-deal workflows (Meta CAPI Purchase, closed-deal notifications). Its branch was checked in the builder only.
