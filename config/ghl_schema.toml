@@ -1,0 +1,134 @@
+# Single source of truth for everything the bot creates or writes in GHL.
+# Option-type fields (data_type SINGLE_OPTIONS, MULTIPLE_OPTIONS, CHECKBOX)
+# are created by hand in the GHL UI; setup_ghl.py --verify checks them.
+
+[pipeline]
+name = "Bot Leads – SEO"
+stages = ["New", "Contacted", "Conversation", "Audit Sent", "Proposal", "Won", "Lost", "Nurture"]
+entry_stage = "New"
+
+[duplicate]
+# Existing client = a contact tag in client_tags, ANY won opportunity, or ANY
+# opportunity in a client_pipelines pipeline (all must exist in the account).
+client_tags = []
+client_pipelines = ["02. GSM Appointment New Client"]
+lost_window_days = 90
+
+[tags]
+static = ["bot-lead", "bot-dupe", "bot-test", "bot-nurture-90", "bot-try-1", "bot-try-2", "bot-try-3"]
+
+# Bot signal flag -> script category (spec 4.2).
+[signals]
+new_business = "New Biz"
+gbp_unverified_or_suspended = "GBP Suspended"
+broken_website = "Broken Site"
+google_ads_spend = "Ad Waste"
+meta_ads_active = "Ad Waste"
+rank_gap = "Rank Gap"
+technical_debt = "Rank Gap"
+competitor_gap = "Rank Gap"
+
+[signal_tags]
+"New Biz" = "sig-new"
+"GBP Suspended" = "sig-gbp"
+"Broken Site" = "sig-site"
+"Ad Waste" = "sig-ads"
+"Rank Gap" = "sig-rank"
+
+# source = payload key the value comes from; "" = never written by the bot.
+[[fields]]
+name = "Lead Score"
+data_type = "NUMERICAL"
+source = "lead_score"
+
+[[fields]]
+name = "Lead Tier"
+data_type = "SINGLE_OPTIONS"
+source = "lead_tier"
+options = ["Hot", "Warm", "Cold"]
+
+[[fields]]
+name = "Niche"
+data_type = "SINGLE_OPTIONS"
+source = "niche"
+options = ["Counselors / therapists", "Roofing", "HVAC", "Electricians", "Personal injury lawyers", "Med spas / dental"]
+
+[[fields]]
+name = "Target City"
+data_type = "TEXT"
+source = "city"
+
+[[fields]]
+name = "Primary Signal"
+data_type = "SINGLE_OPTIONS"
+source = "primary_signal"
+options = ["New Biz", "GBP Suspended", "Broken Site", "Ad Waste", "Rank Gap"]
+
+[[fields]]
+name = "All Signals"
+data_type = "MULTIPLE_OPTIONS"
+source = "signals"
+options = ["New Biz", "GBP Suspended", "Broken Site", "Ad Waste", "Rank Gap"]
+
+[[fields]]
+name = "GBP URL"
+data_type = "TEXT"
+source = "gbp_url"
+
+[[fields]]
+name = "GBP Status"
+data_type = "SINGLE_OPTIONS"
+source = "gbp_status"
+options = ["Verified", "Unverified", "Suspended suspected"]
+
+[[fields]]
+name = "Review Count"
+data_type = "NUMERICAL"
+source = "review_count"
+
+[[fields]]
+name = "Rating"
+data_type = "FLOAT"
+source = "rating"
+
+[[fields]]
+name = "Est. Google Ads Spend"
+data_type = "MONETORY"
+source = "est_google_ads_spend"
+
+[[fields]]
+name = "Meta Ads Active"
+data_type = "CHECKBOX"
+source = "meta_ads_active"
+options = ["Yes"]
+
+[[fields]]
+name = "Money Keyword"
+data_type = "TEXT"
+source = "money_keyword"
+
+[[fields]]
+name = "Current Rank"
+data_type = "NUMERICAL"
+source = "current_rank"
+
+[[fields]]
+name = "Audit Summary"
+data_type = "LARGE_TEXT"
+source = "audit_summary"
+
+[[fields]]
+name = "Call Opener"
+data_type = "LARGE_TEXT"
+source = "call_opener"
+
+[[fields]]
+name = "Bot Run ID"
+data_type = "TEXT"
+source = "bot_run_id"
+
+[[fields]]
+name = "Call Outcome"
+data_type = "SINGLE_OPTIONS"
+source = ""
+options = ["No answer", "Callback", "Interested", "Not interested", "Closed"]

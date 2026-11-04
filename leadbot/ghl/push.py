@@ -1,0 +1,139 @@
+"""push_lead(): the one entry point the bot (part B) calls."""
+
+import datetime as dt
+from dataclasses import dataclass
+
+from leadbot.ghl.client import GHLAuthError, GHLError
+from leadbot.ghl.mapping import PayloadError, contact_body, lead_tags, validate_payload
+
+
+class SetupIncomplete(RuntimeError):
+    pass
+
+
+@dataclass
+class Context:
+    field_ids: dict
+    pipeline_id: str
+    stage_ids: dict
+    client_pipeline_ids: tuple = ()
+
+
+@dataclass
+class PushResult:
+    outcome: str
+    contact_id: str = None
+    opportunity_id: str = None
+    message: str = ""
+
+
+def load_context(client, schema):
+    by_name = {f["name"]: f["id"] for f in client.list_custom_fields()}
+    missing = [f.name for f in schema.fields if f.name not in by_name]
+    pipeline = next((p for p in client.list_pipelines()
+                     if p["name"].lower() == schema.pipeline_name.lower()), None)
+    if pipeline is None:
+        missing.append(f"pipeline {schema.pipeline_name}")
+    elif schema.entry_stage not in {s["name"] for s in pipeline.get("stages", [])}:
+        missing.append(f"stage {schema.entry_stage} in pipeline {schema.pipeline_name}")
+    pipelines = client.list_pipelines()
+    client_pipeline_ids = []
+    for name in schema.client_pipelines:
+        found = next((q for q in pipelines if q["name"].lower() == name.lower()), None)
+        if found is None:
+            missing.append(f"client pipeline {name}")
+        else:
+            client_pipeline_ids.append(found["id"])
+    if missing:
+        raise SetupIncomplete("run scripts/setup_ghl.py; missing: " + ", ".join(missing))
+    stage_ids = {s["name"]: s["id"] for s in pipeline.get("stages", [])}
+    return Context({f.name: by_name[f.name] for f in schema.fields}, pipeline["id"], stage_ids,
+                   tuple(client_pipeline_ids))
+
+
+def _status_date(opportunity):
+    raw = opportunity.get("lastStatusChangeAt") or opportunity.get("updatedAt")
+    if not raw:
+        return None
+    if isinstance(raw, (int, float)) and not isinstance(raw, bool):
+        return dt.datetime.fromtimestamp(raw / 1000, dt.timezone.utc).date()
+    return dt.datetime.fromisoformat(raw.replace("Z", "+00:00")).date()
+
+
+def _duplicate_reason(client, schema, ctx, existing, today):
+    # The duplicate-search response has no documented schema; read tags from the contact.
+    contact = client.get_contact(existing["id"]) or {}
+    tags = {t.lower() for t in contact.get("tags") or []}
+    for marker in schema.client_tags:
+        if marker.lower() in tags:
+            return f"existing client (tag {marker})"
+    opps = client.search_opportunities(existing["id"], status="all")
+    if any(o.get("status") == "won" for o in opps):
+        return "existing client (won deal)"
+    if any(o.get("pipelineId") in ctx.client_pipeline_ids for o in opps):
+        return "existing client (new-client pipeline)"
+    cutoff = today - dt.timedelta(days=schema.lost_window_days)
+    for opp in opps:
+        if opp.get("status") != "lost":
+            continue
+        changed = _status_date(opp)
+        if changed and changed >= cutoff:
+            return f"deal lost on {changed.isoformat()}"
+    return None
+
+
+def _find_existing(client, payload):
+    """By phone, then email, as separate lookups; the first hit wins (spec section 5)."""
+    phone, email = payload.get("phone"), payload.get("email")
+    if phone:
+        found = client.find_duplicate(phone, None)
+        if found:
+            return found
+    if email:
+        return client.find_duplicate(None, email)
+    return None
+
+
+def push_lead(client, schema, ctx, payload, *, extra_tags=(), today=None):
+    today = today or dt.datetime.now(dt.timezone.utc).date()
+    try:
+        validate_payload(payload, schema)
+    except PayloadError as exc:
+        return PushResult("rejected", message=str(exc))
+
+    contact_id = None
+    try:
+        existing = _find_existing(client, payload)
+        if existing:
+            reason = _duplicate_reason(client, schema, ctx, existing, today)
+            if reason:
+                client.add_tags(existing["id"], ["bot-dupe"])
+                return PushResult("duplicate", existing["id"], message=reason)
+
+        contact, is_new = client.upsert_contact(
+            contact_body(payload, schema, ctx.field_ids, client.location_id))
+        contact_id = contact["id"]
+        client.add_tags(contact_id, lead_tags(payload, schema) + list(extra_tags))
+        outcome = "created" if is_new else "updated"
+
+        if payload["lead_tier"] == "Cold":
+            return PushResult(outcome, contact_id)
+
+        open_opps = client.search_opportunities(contact_id, pipeline_id=ctx.pipeline_id,
+                                                status="open")
+        if open_opps:
+            return PushResult("existing", contact_id, open_opps[0]["id"])
+
+        opp = client.create_opportunity({
+            "pipelineId": ctx.pipeline_id,
+            "pipelineStageId": ctx.stage_ids[schema.entry_stage],
+            "locationId": client.location_id,
+            "name": f"{payload['business_name']} – {payload['niche']}",
+            "status": "open",
+            "contactId": contact_id,
+        })
+        return PushResult(outcome, contact_id, opp["id"])
+    except GHLAuthError:
+        raise  # a scope problem fails every lead: stop the batch (spec section 7)
+    except GHLError as exc:
+        return PushResult("failed", contact_id, message=str(exc))
