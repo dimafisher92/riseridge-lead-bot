@@ -33,6 +33,8 @@ def load_context(client, schema):
                      if p["name"].lower() == schema.pipeline_name.lower()), None)
     if pipeline is None:
         missing.append(f"pipeline {schema.pipeline_name}")
+    elif schema.entry_stage not in {s["name"] for s in pipeline.get("stages", [])}:
+        missing.append(f"stage {schema.entry_stage} in pipeline {schema.pipeline_name}")
     if missing:
         raise SetupIncomplete("run scripts/setup_ghl.py; missing: " + ", ".join(missing))
     stage_ids = {s["name"]: s["id"] for s in pipeline.get("stages", [])}

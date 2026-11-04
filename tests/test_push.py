@@ -45,6 +45,13 @@ def test_load_context_reports_missing_setup(schema):
         load_context(FakeClient(), schema)
 
 
+def test_load_context_reports_missing_entry_stage(client, schema):
+    for p in client.pipelines:
+        p["stages"] = [s for s in p["stages"] if s["name"] != "New"]
+    with pytest.raises(SetupIncomplete, match="stage New"):
+        load_context(client, schema)
+
+
 def test_hot_lead_creates_contact_tags_and_opportunity_in_new(client, schema, ctx):
     r = push_lead(client, schema, ctx, lead(), extra_tags=("bot-test",), today=TODAY)
     assert r.outcome == "created"
