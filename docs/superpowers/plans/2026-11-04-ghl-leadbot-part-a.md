@@ -918,6 +918,7 @@ Check against the code's assumptions:
 - Field keys include `id`, `name`, `dataType` and `picklistOptions` (used by setup verify).
 - Tag keys include `name`.
 - Duplicate search keys include `contact` (`find_duplicate` reads `data.get("contact")`).
+- The printed location name matches the RiseRidge sub-account.
 
 If a 401/403 appears, the user adds the named scope and re-runs. If an assumed key is missing, stop and fix the reading code and its unit test before Task 4. If the API rejects `Version: 2021-07-28`, stop: the opportunity-search query names depend on it and this plan needs revising.
 
@@ -2287,17 +2288,21 @@ git commit -m "docs: record Outcome and Lost status workflows as built"
 
 ### Task 11: Live 20-lead test and cleanup
 
-Writes to the live sub-account. Claude shows the user the command and gets a yes before Step 1.
+Writes to the live sub-account. Claude shows the user the command and gets a yes before Step 2.
 
 **Files:**
 - Modify: `docs/ghl-build-sheet.md` (test results section)
 
-- [ ] **Step 1: First push**
+- [ ] **Step 1: Audit existing workflows (browser)**
+
+List the sub-account's existing published workflows. Note any whose trigger would fire on a new contact, on the client marker tag, on Contact Changed, or on an opportunity outside "Bot Leads – SEO" without a filter that excludes `bot-test` or the bot pipeline. Agree with the user whether to pause each one or add a filter before running anything. Warn the reps that about 13 test notifications and assignments are coming.
+
+- [ ] **Step 2: First push**
 
 Run: `python scripts/push_test_leads.py`
 Expected: 20 result lines, then `got {'created': 17, 'duplicate': 2, 'rejected': 1}` and `MATCH`.
 
-- [ ] **Step 2: Check in GHL (browser)**
+- [ ] **Step 3: Check in GHL (browser)**
 
 For each item, look in the sub-account and record pass or fail in the build sheet:
 - One Hot lead: all 17 bot-written fields filled (every field except Call Outcome), tags correct, opportunity in New, owner is a rep for its niche, task "Call: …" with the Hot due time, notification received.
@@ -2308,27 +2313,35 @@ For each item, look in the sub-account and record pass or fail in the build shee
 - Round robin: the 2 Hot/Warm leads in each niche with 2+ reps went to different reps.
 - The lost seed opportunity did not trigger Route (no task on the seed contact).
 
-- [ ] **Step 3: Repeat push (idempotency)**
+- [ ] **Step 4: Repeat push (idempotency)**
 
 Run: `python scripts/push_test_leads.py --repeat`
 Expected: `got {'duplicate': 2, 'existing': 13, 'rejected': 1, 'updated': 4}` and `MATCH`. In GHL, no Hot/Warm lead has a second opportunity.
 
-- [ ] **Step 4: Outcome workflow check (browser)**
+- [ ] **Step 5: Outcome workflow check (browser)**
 
 On test lead 01, set Call Outcome to each value in turn: No answer (4 times), Callback, Interested, Not interested, Closed. After each, check the stage, tags and task against Task 10, and record the results.
 
-- [ ] **Step 5: Cleanup**
+- [ ] **Step 6: Cleanup**
 
 Run: `python scripts/cleanup_test_leads.py`
-Expected: `Deleted 19 contacts and N opportunities. CLEAN` (19 = 17 created leads + 2 seeds; the rejected lead created none and the 2 duplicates are the seeds). In GHL, a contact search for tag `bot-test` shows nothing.
+Expected output:
 
-- [ ] **Step 6: Final verify and commit**
+```
+contacts deleted:      19
+opportunities deleted: 14
+CLEAN
+```
+
+19 = 17 created leads + 2 seeds (the rejected lead created none and the 2 duplicates are the seeds). 14 = 13 Hot/Warm opportunities + 1 lost seed opportunity. In GHL, a contact search for tag `bot-test` shows nothing.
+
+- [ ] **Step 7: Final verify and commit**
 
 Run: `python scripts/setup_ghl.py --verify`
 Expected: `OK` (fields, tags and pipeline untouched by cleanup).
 
 Run: `python -m pytest`
-Expected: 54 passed.
+Expected: 76 passed.
 
 ```bash
 git add docs/ghl-build-sheet.md
