@@ -45,11 +45,15 @@ def _status_date(opportunity):
     raw = opportunity.get("lastStatusChangeAt") or opportunity.get("updatedAt")
     if not raw:
         return None
+    if isinstance(raw, (int, float)) and not isinstance(raw, bool):
+        return dt.datetime.fromtimestamp(raw / 1000, dt.timezone.utc).date()
     return dt.datetime.fromisoformat(raw.replace("Z", "+00:00")).date()
 
 
 def _duplicate_reason(client, schema, existing, today):
-    tags = {t.lower() for t in existing.get("tags") or []}
+    # The duplicate-search response has no documented schema; read tags from the contact.
+    contact = client.get_contact(existing["id"]) or {}
+    tags = {t.lower() for t in contact.get("tags") or []}
     for marker in schema.client_tags:
         if marker.lower() in tags:
             return f"existing client (tag {marker})"
@@ -58,6 +62,18 @@ def _duplicate_reason(client, schema, existing, today):
         changed = _status_date(opp)
         if changed and changed >= cutoff:
             return f"deal lost on {changed.isoformat()}"
+    return None
+
+
+def _find_existing(client, payload):
+    """By phone, then email, as separate lookups; the first hit wins (spec section 5)."""
+    phone, email = payload.get("phone"), payload.get("email")
+    if phone:
+        found = client.find_duplicate(phone, None)
+        if found:
+            return found
+    if email:
+        return client.find_duplicate(None, email)
     return None
 
 
@@ -70,7 +86,7 @@ def push_lead(client, schema, ctx, payload, *, extra_tags=(), today=None):
 
     contact_id = None
     try:
-        existing = client.find_duplicate(payload.get("phone"), payload.get("email"))
+        existing = _find_existing(client, payload)
         if existing:
             reason = _duplicate_reason(client, schema, existing, today)
             if reason:

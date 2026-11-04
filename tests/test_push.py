@@ -141,3 +141,44 @@ def test_auth_error_stops_the_batch(client, schema, ctx):
     client.find_duplicate = denied
     with pytest.raises(GHLAuthError):
         push_lead(client, schema, ctx, lead(), today=TODAY)
+
+
+def test_phone_hit_wins_over_a_different_email_hit(client, schema, ctx):
+    by_email, _ = client.upsert_contact({"locationId": "LOC1", "email": SAMPLE_PAYLOAD["email"]})
+    by_phone, _ = client.upsert_contact({"locationId": "LOC1", "phone": SAMPLE_PAYLOAD["phone"]})
+    client.add_tags(by_phone["id"], ["client"])
+    r = push_lead(client, schema, ctx, lead(), today=TODAY)
+    assert r.outcome == "duplicate" and r.contact_id == by_phone["id"]
+    assert "bot-dupe" in client.contacts[by_phone["id"]]["tags"]
+    assert client.contacts[by_email["id"]]["tags"] == []
+
+
+def test_email_only_match_is_found(client, schema, ctx):
+    contact, _ = client.upsert_contact({"locationId": "LOC1", "email": SAMPLE_PAYLOAD["email"]})
+    client.add_tags(contact["id"], ["client"])
+    r = push_lead(client, schema, ctx, lead(phone=None), today=TODAY)
+    assert r.outcome == "duplicate" and r.contact_id == contact["id"]
+
+
+def test_client_tag_read_from_get_contact_when_search_result_has_no_tags(client, schema, ctx,
+                                                                         monkeypatch):
+    contact, _ = client.upsert_contact({"locationId": "LOC1", "phone": SAMPLE_PAYLOAD["phone"]})
+    client.add_tags(contact["id"], ["client"])
+    real = client.find_duplicate
+
+    def without_tags(phone, email):
+        found = real(phone, email)
+        if found:
+            found.pop("tags", None)
+        return found
+
+    monkeypatch.setattr(client, "find_duplicate", without_tags)
+    r = push_lead(client, schema, ctx, lead(), today=TODAY)
+    assert r.outcome == "duplicate"
+    assert client.opportunities == {}
+
+
+def test_status_date_accepts_epoch_milliseconds():
+    from leadbot.ghl.push import _status_date
+    assert _status_date({"lastStatusChangeAt": 1788000000000}) == dt.date(2026, 8, 29)
+    assert _status_date({"updatedAt": 1788000000000.0}) == dt.date(2026, 8, 29)
