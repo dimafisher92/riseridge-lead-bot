@@ -112,7 +112,7 @@ Stages in order: New, Contacted, Conversation, Audit Sent, Proposal, Won, Lost, 
 1. Validate the payload against the Step 6 schema. If a required key is missing (business_name, and phone or email), reject and do not call GHL.
 2. Look up the contact by phone, then email.
 3. Duplicate guard. Mark as duplicate when either is true:
-   - the existing contact is a client. What marks a client in this sub-account (a tag, a pipeline stage) is checked in the browser during the build and written into `ghl_schema.yaml`;
+   - the existing contact is a client: it has any opportunity with status won (any pipeline), or any opportunity (any status) in the "02. GSM Appointment New Client" pipeline. A client tag from `[duplicate] client_tags` also counts, but none is set in this sub-account. The opportunity rules read one `status=all` search;
    - the contact has an opportunity with status lost changed in the last 90 days.
 
    On a duplicate, add `bot-dupe`, do not add `bot-lead`, create no opportunity, and return `duplicate`.

@@ -2295,7 +2295,7 @@ Writes to the live sub-account. Claude shows the user the command and gets a yes
 
 - [ ] **Step 1: Audit existing workflows (browser)**
 
-List the sub-account's existing published workflows. Note any whose trigger would fire on a new contact, on the client marker tag, on Contact Changed, or on an opportunity outside "Bot Leads – SEO" without a filter that excludes `bot-test` or the bot pipeline. Agree with the user whether to pause each one or add a filter before running anything. Warn the reps that about 13 test notifications and assignments are coming.
+List the sub-account's existing published workflows. Note any whose trigger would fire on a new contact, on an opportunity moving to Won or Lost, on Contact Changed, or on an opportunity outside "Bot Leads – SEO" without a filter that excludes `bot-test` or the bot pipeline. Agree with the user whether to pause each one or add a filter before running anything. Warn the reps that about 13 test notifications and assignments are coming.
 
 - [ ] **Step 2: First push**
 
@@ -2311,7 +2311,7 @@ For each item, look in the sub-account and record pass or fail in the build shee
 - Leads 17 and 18: `bot-dupe` tag, no `bot-lead`, no new opportunity.
 - Lead 19 (email only): contact and opportunity created.
 - Round robin: the 2 Hot/Warm leads in each niche with 2+ reps went to different reps.
-- The lost seed opportunity did not trigger Route (no task on the seed contact).
+- The lost and won seed opportunities did not trigger Route (no task on the seed contacts). The existing-client seed is a won opportunity in the bot pipeline, not a client tag, so the real client pipeline stays untouched.
 
 - [ ] **Step 4: Repeat push (idempotency)**
 
@@ -2329,11 +2329,11 @@ Expected output:
 
 ```
 contacts deleted:      19
-opportunities deleted: 14
+opportunities deleted: 15
 CLEAN
 ```
 
-19 = 17 created leads + 2 seeds (the rejected lead created none and the 2 duplicates are the seeds). 14 = 13 Hot/Warm opportunities + 1 lost seed opportunity. In GHL, a contact search for tag `bot-test` shows nothing.
+19 = 17 created leads + 2 seeds (the rejected lead created none and the 2 duplicates are the seeds). 15 = 13 Hot/Warm opportunities + 1 lost seed opportunity + 1 won seed opportunity. In GHL, a contact search for tag `bot-test` shows nothing.
 
 - [ ] **Step 7: Final verify and commit**
 
