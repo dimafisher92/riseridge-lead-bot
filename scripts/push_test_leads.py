@@ -10,6 +10,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
 from leadbot.env import client_from_env  # noqa: E402
+from leadbot.ghl.cleanup import find_collisions  # noqa: E402
 from leadbot.ghl.push import load_context, push_lead  # noqa: E402
 from leadbot.ghl.schema import load_schema  # noqa: E402
 from leadbot.ghl.testdata import (  # noqa: E402
@@ -72,6 +73,13 @@ def main(argv=None):
     client, schema = client_from_env(), load_schema()
     ctx = load_context(client, schema)
     ledger = load_ledger()
+    collisions = find_collisions(client, ledger)
+    if collisions:
+        print("ABORT: these test identifiers already belong to contacts not in the ledger;")
+        print("a push would overwrite them and tag them bot-test. Nothing was written.")
+        for ident, cid in collisions:
+            print(f"  {ident} -> contact {cid}")
+        return 1
     seed(client, schema, ctx, ledger)
 
     counts = Counter()

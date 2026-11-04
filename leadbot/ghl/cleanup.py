@@ -42,17 +42,29 @@ def _test_identifiers():
     return _unique(phones), _unique(emails)
 
 
-def _discover(client, ledger):
-    found = list(ledger.get("contacts", []))
+def _lookups(client):
+    """Yields (identifier, contact_id) for every test phone and email that matches a contact."""
     phones, emails = _test_identifiers()
     for phone in phones:
         dup = client.find_duplicate(phone, None)
         if dup:
-            found.append(dup["id"])
+            yield phone, dup["id"]
     for email in emails:
         dup = client.find_duplicate(None, email)
         if dup:
-            found.append(dup["id"])
+            yield email, dup["id"]
+
+
+def find_collisions(client, ledger):
+    """Pre-flight for the test push: test identifiers already held by a contact the
+    ledger does not know. Such a contact would be overwritten and tagged bot-test."""
+    known = set(ledger.get("contacts", []))
+    return [(ident, cid) for ident, cid in _lookups(client) if cid not in known]
+
+
+def _discover(client, ledger):
+    found = list(ledger.get("contacts", []))
+    found += [cid for _, cid in _lookups(client)]
     return _unique(found)
 
 
@@ -96,10 +108,20 @@ def cleanup_test_data(client, ledger):
             result.leftovers.append(f"opportunity {oid} still on contact {cid}")
 
     for cid in deletable:
-        client.delete_contact(cid)
+        try:
+            client.delete_contact(cid)
+        except GHLError as exc:
+            if exc.status != 404:
+                raise
         result.contacts_deleted.append(cid)
     for cid in deletable:
         if client.get_contact(cid) is not None:
             result.leftovers.append(f"contact {cid} still exists")
 
+    # A seed whose contact is gone must be re-created by the next push.
+    seeds = ledger.get("seeds", {})
+    for name in [n for n, cid in seeds.items() if client.get_contact(cid) is None]:
+        del seeds[name]
+
     return result
+

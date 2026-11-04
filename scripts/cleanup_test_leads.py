@@ -31,6 +31,9 @@ def main():
     for line in result.leftovers:
         print(f"LEFTOVER {line}")
     if not result.clean:
+        os.makedirs(os.path.dirname(LEDGER), exist_ok=True)
+        with open(LEDGER, "w", encoding="utf-8") as fh:
+            json.dump(ledger, fh, indent=2)
         print("NOT CLEAN: ledger kept")
         return 1
     if ledger_exists:

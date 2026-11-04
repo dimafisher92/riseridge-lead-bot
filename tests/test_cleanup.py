@@ -1,8 +1,8 @@
 import pytest
 
 from leadbot.ghl.client import GHLError
-from leadbot.ghl.cleanup import cleanup_test_data
-from leadbot.ghl.testdata import TEST_LEADS
+from leadbot.ghl.cleanup import cleanup_test_data, find_collisions
+from leadbot.ghl.testdata import SEEDS, TEST_LEADS
 from tests.fakes import FakeClient
 
 PHONE = TEST_LEADS[0]["phone"]
@@ -97,3 +97,71 @@ def test_surviving_opportunity_is_a_leftover(monkeypatch):
     assert oid in c.opportunities
     assert result.leftovers and any(oid in line for line in result.leftovers)
     assert result.clean is False
+
+
+def test_delete_contact_404_tolerated(monkeypatch):
+    c = FakeClient()
+    cid = _contact(c, PHONE, tags=["bot-test"])
+
+    def gone_then_404(contact_id):
+        c.contacts.pop(contact_id, None)
+        raise GHLError(404, "not found")
+
+    monkeypatch.setattr(c, "delete_contact", gone_then_404)
+    result = cleanup_test_data(c, _ledger([cid]))
+    assert result.clean is True
+
+
+def test_delete_contact_500_propagates(monkeypatch):
+    c = FakeClient()
+    cid = _contact(c, PHONE, tags=["bot-test"])
+
+    def boom(contact_id):
+        raise GHLError(500, "server")
+
+    monkeypatch.setattr(c, "delete_contact", boom)
+    with pytest.raises(GHLError) as exc:
+        cleanup_test_data(c, _ledger([cid]))
+    assert exc.value.status == 500
+
+
+def test_deleted_seed_is_removed_from_ledger_seeds():
+    c = FakeClient()
+    cid = _contact(c, SEEDS["client"]["phone"], tags=["bot-test"])
+    ledger = _ledger([cid])
+    ledger["seeds"] = {"client": cid}
+    cleanup_test_data(c, ledger)
+    assert ledger["seeds"] == {}
+
+
+def test_kept_seed_stays_in_ledger_seeds():
+    c = FakeClient()
+    cid = _contact(c, SEEDS["client"]["phone"])  # no bot-test tag: protected
+    ledger = _ledger([cid])
+    ledger["seeds"] = {"client": cid}
+    cleanup_test_data(c, ledger)
+    assert ledger["seeds"] == {"client": cid} and cid in c.contacts
+
+
+def test_collisions_clean_account_passes():
+    assert find_collisions(FakeClient(), _ledger()) == []
+
+
+def test_collision_on_test_phone_outside_ledger_is_reported():
+    c = FakeClient()
+    cid = _contact(c, PHONE)
+    found = find_collisions(c, _ledger())
+    assert found == [(PHONE, cid)]
+
+
+def test_collision_on_test_email_outside_ledger_is_reported():
+    c = FakeClient()
+    email = TEST_LEADS[0]["email"]
+    cid = _contact(c, "+15125550999", email=email)
+    assert find_collisions(c, _ledger()) == [(email, cid)]
+
+
+def test_contact_already_in_ledger_is_not_a_collision():
+    c = FakeClient()
+    cid = _contact(c, PHONE, tags=["bot-test"], email=TEST_LEADS[0]["email"])
+    assert find_collisions(c, _ledger([cid])) == []
