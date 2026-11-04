@@ -18,4 +18,24 @@ No client tag exists in this sub-account. Decision (user, 2026-11-04): a contact
 
 ## Reps by niche
 
-Pending: the user maps reps to niches before the Route workflow is built.
+## Workflows
+
+The public API only lists workflows (`GET /workflows/`, checked 2026-11-04), so all are built in the UI. All stay in Draft until the workflow audit (plan Task 11 Step 1) is done with the user.
+
+### [Lead Bot] Route (Draft, built 2026-11-04)
+
+URL: `/v2/location/qxOMqnU9zjuxJ3xHHo90/automation/workflow/6e777db8-c587-46cb-8a31-8ec212a23182`
+
+1. Trigger: Opportunity Created; filters: In pipeline is "Bot Leads – SEO", Status is Open.
+2. Assign to user: Sergey Vitrenko ("only apply to unassigned contacts" off).
+3. Add owner to opportunity: Sergey Vitrenko.
+4. Internal Notification (in-app): title "New bot lead: {Lead Tier}", message pointing to the Lead Bot fields; redirect to Contact; to Assigned owners (contact owner).
+5. Condition on Lead Tier: branch "Hot" (Lead Tier is Hot) / None (Warm; Cold leads never get an opportunity).
+   - Hot: Add task "Call: {Primary Signal}", assigned to the contact's assigned user, due 1 day at 10:00 AM.
+   - None: same task, due 2 days at 10:00 AM.
+
+Differences from the spec: one rep, so no niche branches; the notification is in-app, not email; "Skip weekends" on the Hot task may not have saved (check in the test); task titles use the merge picker because typed `{{...}}` tags are dropped by the title box.
+
+## Reps by niche
+
+One rep covers every niche (user, 2026-11-04): Sergey Vitrenko. The Route workflow therefore uses a single Assign To User step instead of six niche branches; add branches when more reps join.
