@@ -134,7 +134,8 @@ def test_unknown_bot_run_id_is_rejected(tmp_path):
     assert push(run_dir, "--dry-run") == 1
 
 
-def test_live_refused_while_seeds_not_live(tmp_path):
+def test_live_refused_while_seeds_not_live(tmp_path, monkeypatch):
+    monkeypatch.setattr(cli, "load_seeds", lambda: dataclasses.replace(load_seeds(), live=False))
     c = candidate()
     run_dir = write_run(tmp_path, [c], [qualified(c)])
     with pytest.raises(SystemExit, match="live = false"):

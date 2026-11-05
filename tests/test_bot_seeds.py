@@ -22,8 +22,9 @@ def test_every_city_has_area_codes():
         assert city_plan(seeds, NICHE, city).area_codes
 
 
-def test_seeds_default_to_dry_run():
-    assert load_seeds().live is False
+def test_repo_seeds_load_with_boolean_switches():
+    seeds = load_seeds()  # the missing-key defaults are pinned in test_live_boolean_values
+    assert isinstance(seeds.live, bool) and isinstance(seeds.dnc_check, bool)
 
 
 def test_seed_niches_exist_in_ghl_schema():

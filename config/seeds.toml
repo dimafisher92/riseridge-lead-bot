@@ -1,5 +1,5 @@
-# Part B1 seeds (spec 3.1). live = false keeps every push a dry run.
-live = false
+# Part B1 seeds (spec 3.1). live = true since 2026-11-05 (Austin go-live); false keeps every push a dry run.
+live = true
 # dnc_check = false skips the FTC Do Not Call scrub (user decision 2026-11-05: B2B calls).
 # Set it to true and save area-code files in state/dnc/ to scrub again.
 dnc_check = false
