@@ -73,3 +73,20 @@ def test_registration_error_is_unknown():
     def boom(url):
         raise OSError("404")
     assert registration_date("https://www.calmtherapy.com/", get_json=boom) is None
+
+
+def test_pagespeed_odd_shape_is_unknown():
+    def score(value):
+        return lambda url: {"lighthouseResult": {"categories": {"performance": {"score": value}}}}
+    assert mobile_score("https://x.example.com/", get_json=score("fast")) is None
+    assert mobile_score("https://x.example.com/", get_json=lambda url: ["not", "a", "dict"]) is None
+    assert mobile_score("https://x.example.com/", get_json=score(None)) is None
+
+
+def test_registration_odd_shape_is_unknown():
+    url = "https://www.calmtherapy.com/"
+    assert registration_date(url, get_json=lambda u: ["not a dict"]) is None
+    assert registration_date(url, get_json=lambda u: {"events": "nope"}) is None
+    assert registration_date(url, get_json=lambda u: {"events": [None, 3]}) is None
+    assert registration_date(url, get_json=lambda u: {"events": [
+        {"eventAction": "registration", "eventDate": 20260801}]}) is None

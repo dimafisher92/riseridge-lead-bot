@@ -86,8 +86,16 @@ def parse_row(row):
     )
 
 
+class Places(list):
+    """Places read from one results file; bad_rows counts rows parse_row could not read."""
+
+    def __init__(self, places=(), bad_rows=0):
+        super().__init__(places)
+        self.bad_rows = bad_rows
+
+
 def read_results(path):
-    places = []
+    places = Places()
     if not os.path.exists(path):
         return places
     with open(path, encoding="utf-8") as fh:
@@ -95,12 +103,16 @@ def read_results(path):
     for i, line in enumerate(lines):
         try:
             row = json.loads(line)
-        except json.JSONDecodeError:
+        except json.JSONDecodeError as exc:
             # A killed run can leave a truncated last line; corruption earlier is an error.
             if i == len(lines) - 1:
                 break
-            raise
-        place = parse_row(row)
+            raise ScrapeError(f"malformed JSON on line {i + 1} of {path}") from exc
+        try:
+            place = parse_row(row)
+        except (ValueError, TypeError, KeyError, AttributeError):
+            places.bad_rows += 1  # one odd row never sinks the file
+            continue
         if place.place_id and place.name:
             places.append(place)
     return places

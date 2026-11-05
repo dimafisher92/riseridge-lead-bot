@@ -22,12 +22,9 @@ def registration_date(url, get_json=http.get_json):
         return None
     try:
         data = get_json(RDAP_URL.format(domain))
-    except Exception:  # noqa: BLE001 - unknown registry, rate limit or timeout
-        return None
-    for event in data.get("events") or []:
-        if event.get("eventAction") == "registration" and event.get("eventDate"):
-            try:
+        for event in data.get("events") or []:
+            if event.get("eventAction") == "registration" and event.get("eventDate"):
                 return dt.datetime.fromisoformat(event["eventDate"].replace("Z", "+00:00")).date()
-            except ValueError:
-                return None
+    except Exception:  # noqa: BLE001 - unknown registry, rate limit, timeout or odd shape
+        return None
     return None

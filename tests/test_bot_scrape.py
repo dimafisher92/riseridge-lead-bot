@@ -106,7 +106,7 @@ def test_malformed_middle_line_raises(tmp_path):
     path = tmp_path / "r.jsonl"
     lines = fixture_lines()
     path.write_text(lines[0] + "\n{bad json\n" + lines[1] + "\n", encoding="utf-8")
-    with pytest.raises(json.JSONDecodeError):
+    with pytest.raises(ScrapeError, match="line 2"):
         read_results(str(path))
 
 
@@ -130,3 +130,27 @@ def test_run_scraper_clears_stale_results(tmp_path):
 
     assert run_scraper(["q"], str(tmp_path), "money", exe="gmaps.exe", depth=1,
                        runner=silent_runner) == []
+
+
+def test_unparseable_rows_are_skipped_and_counted(tmp_path):
+    path = tmp_path / "r.jsonl"
+    lines = fixture_lines()
+    path.write_text("\n".join([lines[0], '{"place_id": "fx-x", "title": "X", "review_count": "lots"}',
+                               '[1, 2]', '{"place_id": "fx-y", "title": "Y", "review_rating": "n/a"}',
+                               lines[1]]) + "\n", encoding="utf-8")
+    places = read_results(str(path))
+    assert [p.place_id for p in places] == ["fx-lakeview", "fx-brightpath"]
+    assert places.bad_rows == 3
+    assert read_results(FIXTURE).bad_rows == 0
+
+
+def test_run_scraper_passes_bad_row_count(tmp_path):
+    lines = fixture_lines()
+
+    def runner(args, stdout, stderr, timeout):
+        with open(args[args.index("-results") + 1], "w", encoding="utf-8") as fh:
+            fh.write(lines[0] + '\n{"place_id": "fx-x", "title": "X", "review_count": "lots"}\n')
+        return subprocess.CompletedProcess(args, 0)
+
+    places = run_scraper(["q"], str(tmp_path), "money", exe="gmaps.exe", depth=1, runner=runner)
+    assert len(places) == 1 and places.bad_rows == 1

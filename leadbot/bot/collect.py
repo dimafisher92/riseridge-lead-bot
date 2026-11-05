@@ -10,6 +10,7 @@ from leadbot.bot.dnc import area_code, is_listed
 from leadbot.bot.score import lead_score, lead_tier, primary_flag
 from leadbot.bot.scrape import ScrapeError
 from leadbot.bot.signals import Enrichment, detect, gbp_status, rank_info, true_flags
+from leadbot.ghl.client import GHLAuthError
 
 
 @dataclass
@@ -42,19 +43,34 @@ def _drop_reason(place, deps, *, dnc, dnc_areas, seen, seen_days, today):
         return "dnc_area_not_loaded"  # fail closed: no list loaded for this number
     if seen is not None and seen.recently_seen(place.place_id, today, seen_days):
         return "seen_recently"
-    if deps.find_contact(place.phone, None) or (place.email and deps.find_contact(None, place.email)):
+    try:
+        found = (deps.find_contact(place.phone, None)
+                 or (place.email and deps.find_contact(None, place.email)))
+    except GHLAuthError:
+        raise  # a token problem fails every lookup: stop the run
+    except Exception:  # noqa: BLE001 - one failed lookup drops only this place
+        return "ghl_lookup_failed"
+    if found:
         return "ghl_contact"
     return None
 
 
+def _checked(check, url):
+    """One enrichment piece; any error means "not checked" (spec 5)."""
+    try:
+        return check(url)
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def _enrich(place, money, plan, deps, today):
-    site = deps.site_check(place.website) if place.website else None
-    registered = deps.domain_age(place.website) if place.website else None
+    site = _checked(deps.site_check, place.website) if place.website else None
+    registered = _checked(deps.domain_age, place.website) if place.website else None
     enrich = Enrichment(site, None, registered)
     rank = rank_info(place.place_id, money, plan.money_keyword)
     signals = detect(place, enrich, rank, today)
     if site is not None and site.reachable and true_flags(signals):
-        enrich = Enrichment(site, deps.pagespeed(place.website), registered)
+        enrich = Enrichment(site, _checked(deps.pagespeed, place.website), registered)
         signals = detect(place, enrich, rank, today)
     return enrich, rank, signals
 
@@ -71,7 +87,7 @@ def _write_report(run_dir, report):
 
 def collect_city(plan, seeds, scoring, schema, deps, *, run_id, run_dir, today, dnc=None, seen=None):
     report = {"run_id": run_id, "niche": plan.niche, "city": plan.city,
-              "dnc_checked": dnc is not None, "scraped": 0, "dropped": {}, "tiers": {},
+              "dnc_checked": dnc is not None, "scraped": 0, "bad_rows": 0, "dropped": {}, "tiers": {},
               "needs_text": 0, "status": "ok"}
     try:
         money = deps.scrape([plan.money_query], "money")
@@ -82,6 +98,7 @@ def collect_city(plan, seeds, scoring, schema, deps, *, run_id, run_dir, today, 
         return report
     places = _merge(money, areas)
     report["scraped"] = len(places)
+    report["bad_rows"] = getattr(money, "bad_rows", 0) + getattr(areas, "bad_rows", 0)
     if not places:
         report["status"] = "blocked_or_failed"
         _write_report(run_dir, report)

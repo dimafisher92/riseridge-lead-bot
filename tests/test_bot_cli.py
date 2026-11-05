@@ -124,7 +124,8 @@ def test_live_push_creates_lead_and_marks_seen(tmp_path, monkeypatch):
     c = candidate()
     run_dir = write_run(tmp_path, [c], [qualified(c)], dropped=[
         {"place_id": "fx-closed", "business_name": "x", "reason": "closed"},
-        {"place_id": "fx-cap", "business_name": "y", "reason": "over_nightly_cap"}])
+        {"place_id": "fx-cap", "business_name": "y", "reason": "over_nightly_cap"},
+        {"place_id": "fx-ghl", "business_name": "z", "reason": "ghl_lookup_failed"}])
     assert push(run_dir) == 0
     assert report_of(run_dir, "push_report.json")["counts"] == {"created": 1}
     assert len(client.opportunities) == 1
@@ -132,6 +133,7 @@ def test_live_push_creates_lead_and_marks_seen(tmp_path, monkeypatch):
     assert store.recently_seen("fx-1", today, 30)
     assert store.recently_seen("fx-closed", today, 30)
     assert not store.recently_seen("fx-cap", today, 30)
+    assert not store.recently_seen("fx-ghl", today, 30)
     store.close()
 
 
@@ -213,7 +215,8 @@ def test_live_push_rejects_dnc_listed_and_unloaded_area(tmp_path, monkeypatch):
     monkeypatch.setattr(cli, "push_lead", spy)
     assert push(run_dir) == 1
     results = {r["bot_run_id"]: r for r in report_of(run_dir, "push_report.json")["results"]}
-    assert (results[listed["bot_run_id"]]["outcome"], results[listed["bot_run_id"]]["message"]) ==         ("rejected", "dnc")
-    assert (results[dallas["bot_run_id"]]["outcome"], results[dallas["bot_run_id"]]["message"]) ==         ("rejected", "dnc_area_not_loaded")
+    outcome = {k: (r["outcome"], r["message"]) for k, r in results.items()}
+    assert outcome[listed["bot_run_id"]] == ("rejected", "dnc")
+    assert outcome[dallas["bot_run_id"]] == ("rejected", "dnc_area_not_loaded")
     assert results[ok["bot_run_id"]]["outcome"] == "created"
     assert pushed == [ok["bot_run_id"]]

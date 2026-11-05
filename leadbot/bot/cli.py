@@ -75,6 +75,8 @@ def cmd_collect(args):
 
 
 HANDLED_OUTCOMES = ("created", "updated", "duplicate", "existing")
+# Drops that say nothing about the place itself: it is collected again next night.
+UNSEEN_DROPS = ("over_nightly_cap", "ghl_lookup_failed")
 
 
 def _mark_seen(run_dir, candidates, outcomes, today):
@@ -89,7 +91,7 @@ def _mark_seen(run_dir, candidates, outcomes, today):
             elif outcome is None and not cand.needs_text(c):
                 store.mark(c["place_id"], today, "cold_no_email")
         for d in cand.read_jsonl(os.path.join(run_dir, "dropped.jsonl")):
-            if d.get("reason") != "over_nightly_cap" and d.get("place_id"):
+            if d.get("reason") not in UNSEEN_DROPS and d.get("place_id"):
                 store.mark(d["place_id"], today, d["reason"])
     finally:
         store.close()
