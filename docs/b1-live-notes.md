@@ -46,3 +46,16 @@ Note: the chain check in this test was a quick name rule and wrongly dropped two
 ## DNC switched off (2026-11-05)
 
 `dnc_check = false` in `config/seeds.toml` (user decision: B2B calls, no FTC files). While adding the switch, a test that expected collect to stop at the DNC gate ran a real Austin collect for about 2 minutes before it was stopped: it rewrote `money.*` and `areas.*` raw scraper files in `state/runs/2026-11-05-counselors-therapists-austin-tx/` and stopped before enrichment, so no GHL calls were made and `candidates.jsonl`, `report.json`, `qualified.jsonl` and the seen store are unchanged. `tests/conftest.py` now fails any test that reaches the real scraper or GHL.
+
+## Existing-automation check before go-live (2026-11-05, plan Task 11 Step 2)
+
+`GET /workflows/` lists 224 workflows: 168 published (165 at the part A audit + the three `[Lead Bot]` ones), 56 drafts. Created or updated since 2026-11-04 (UTC):
+
+| workflow | status | updated | verdict |
+| --- | --- | --- | --- |
+| [Lead Bot] Route / Outcome / Lost status | published | 2026-11-04 20:57-20:58 | ours |
+| 002. Free Audit Booked | published | 2026-11-04 17:23 | single trigger: appointment status on the "Free AI Visibility Audit" calendar; cannot fire on bot leads |
+| AEO API \| SEO RR Pixel 2026 | published | 2026-11-04 19:44 | triggers: appointment status, stage changed to "009. Closed Deal" in "GSM SEO Pipeline", specific form submissions; cannot fire on bot leads |
+| 001. New Lead + AEO Nurture (DRAFT - review) | draft | 2026-11-05 01:43 | does not run while a draft; its name suggests a new-lead nurture, so check its triggers exclude `bot-lead` contacts before anyone publishes it |
+
+Both published edits predate the part A live tests (run after 20:58), which showed no side effects on bot contacts. Result: no new published workflow touches bot leads.
