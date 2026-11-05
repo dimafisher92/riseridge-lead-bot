@@ -1,0 +1,18 @@
+# SOP Step 4 weights (spec 3.6). Re-weight monthly against closed deals.
+retention_niches = ["Counselors / therapists"]
+
+[weights]
+gbp_unverified_or_suspended = 25
+google_ads_spend = 20
+google_ads_spend_over_3k_bonus = 10
+meta_ads_active = 10
+broken_website = 15
+new_business = 15
+rank_gap = 10
+technical_debt = 5
+competitor_gap = 5
+retention_niche = 5
+
+[tiers]
+hot = 70
+warm = 45
