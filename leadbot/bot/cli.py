@@ -14,6 +14,7 @@ from leadbot.bot.score import load_scoring
 from leadbot.bot.seeds import city_plan, load_seeds
 from leadbot.bot.seen import SeenStore
 from leadbot.env import ROOT, client_from_env
+from leadbot.ghl.client import GHLAuthError
 from leadbot.ghl.mapping import PayloadError, validate_payload
 from leadbot.ghl.push import load_context, push_lead
 from leadbot.ghl.schema import load_schema, slug
@@ -66,11 +67,20 @@ def cmd_collect(args):
     return 0 if report["status"] == "ok" else 2
 
 
-def _mark_seen(run_dir, candidates, today):
+HANDLED_OUTCOMES = ("created", "updated", "duplicate", "existing")
+
+
+def _mark_seen(run_dir, candidates, outcomes, today):
+    """Mark only leads the bot has handled: pushed (or deduped) ones, and Cold leads
+    without an email, which are never pushed by design."""
     store = SeenStore(SEEN_PATH)
     try:
-        for c in candidates:
-            store.mark(c["place_id"], today, c["lead_tier"])
+        for c in candidates.values():
+            outcome = outcomes.get(c["bot_run_id"])
+            if outcome in HANDLED_OUTCOMES:
+                store.mark(c["place_id"], today, outcome)
+            elif outcome is None and not cand.needs_text(c):
+                store.mark(c["place_id"], today, "cold_no_email")
         for d in cand.read_jsonl(os.path.join(run_dir, "dropped.jsonl")):
             if d.get("reason") != "over_nightly_cap" and d.get("place_id"):
                 store.mark(d["place_id"], today, d["reason"])
@@ -96,7 +106,12 @@ def cmd_push(args):
         ctx = load_context(client, schema)
 
     results = []
+    auth_error = None  # set once a GHL auth error stops the batch (spec 5)
     for q in cand.read_jsonl(args.file):
+        if auth_error:
+            results.append({"bot_run_id": q.get("bot_run_id"), "outcome": "aborted",
+                            "message": auth_error})
+            continue
         c = candidates.get(q.get("bot_run_id"))
         if c is None:
             results.append({"bot_run_id": q.get("bot_run_id"), "outcome": "rejected",
@@ -109,7 +124,13 @@ def cmd_push(args):
             continue
         payload = cand.to_payload(q)
         if live:
-            r = push_lead(client, schema, ctx, payload)
+            try:
+                r = push_lead(client, schema, ctx, payload)
+            except GHLAuthError as exc:
+                auth_error = f"GHL auth error: {exc}"
+                results.append({"bot_run_id": c["bot_run_id"], "outcome": "aborted",
+                                "message": auth_error})
+                continue
             results.append({"bot_run_id": c["bot_run_id"], "outcome": r.outcome, "message": r.message,
                             "contact_id": r.contact_id, "opportunity_id": r.opportunity_id})
             continue
@@ -120,12 +141,16 @@ def cmd_push(args):
             results.append({"bot_run_id": c["bot_run_id"], "outcome": "rejected", "message": str(exc)})
 
     if live:
-        _mark_seen(run_dir, candidates.values(), dt.date.today())
+        _mark_seen(run_dir, candidates, {r["bot_run_id"]: r["outcome"] for r in results},
+                   dt.date.today())
     counts = dict(Counter(r["outcome"] for r in results))
     name = "push_report.json" if live else "dry_run_report.json"
     with open(os.path.join(run_dir, name), "w", encoding="utf-8") as fh:
         json.dump({"live": live, "counts": counts, "results": results}, fh, indent=2)
     print(json.dumps({"live": live, "counts": counts}, indent=2))
+    if auth_error:
+        print(f"Run stopped on a GHL auth error; remaining leads marked aborted. ({auth_error})")
+        return 3
     return 1 if any(r["outcome"] in ("rejected", "failed") for r in results) else 0
 
 

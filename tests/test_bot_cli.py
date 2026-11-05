@@ -7,6 +7,7 @@ import pytest
 from leadbot.bot import cli
 from leadbot.bot.seeds import load_seeds
 from leadbot.bot.seen import SeenStore
+from leadbot.ghl.client import GHLAuthError
 from leadbot.ghl.schema import load_schema
 from leadbot.ghl.setup import run_setup
 from tests.fakes import FakeClient
@@ -129,3 +130,67 @@ def test_collect_refuses_without_dnc_files(tmp_path, monkeypatch):
     monkeypatch.setattr(cli, "load_dnc", lambda: cli.DncList())
     with pytest.raises(SystemExit, match="512"):
         cli.main(["collect", "--niche", "Counselors / therapists", "--city", "Austin, TX"])
+
+
+def live_env(monkeypatch, tmp_path):
+    schema = load_schema()
+    client = FakeClient()
+    run_setup(client, schema)
+    client.create_pipeline("02. GSM Appointment New Client", ["New client!"])
+    for f in schema.fields:
+        if f.created_by == "ui":
+            client.fields.append({"id": "ui-" + f.name, "name": f.name, "dataType": f.data_type,
+                                  "picklistOptions": list(f.options)})
+    seen_path = str(tmp_path / "seen.sqlite")
+    monkeypatch.setattr(cli, "client_from_env", lambda: client)
+    monkeypatch.setattr(cli, "load_seeds", lambda: dataclasses.replace(load_seeds(), live=True))
+    monkeypatch.setattr(cli, "SEEN_PATH", seen_path)
+    return client, seen_path
+
+
+def test_auth_error_aborts_batch(tmp_path, monkeypatch):
+    client, seen_path = live_env(monkeypatch, tmp_path)
+    cands = [candidate(n, phone=f"+151255501{n:02d}") for n in (1, 2, 3)]
+    run_dir = write_run(tmp_path, cands, [qualified(c) for c in cands])
+    real_push_lead, calls = cli.push_lead, []
+
+    def flaky_push_lead(*args, **kwargs):
+        calls.append(1)
+        if len(calls) == 1:
+            return real_push_lead(*args, **kwargs)
+        raise GHLAuthError(401, "token revoked")
+
+    monkeypatch.setattr(cli, "push_lead", flaky_push_lead)
+    assert push(run_dir) == 3
+    assert len(calls) == 2
+    assert report_of(run_dir, "push_report.json")["counts"] == {"created": 1, "aborted": 2}
+    store = SeenStore(seen_path)
+    try:
+        assert store.recently_seen("fx-1", dt.date.today(), 30)
+        assert not store.recently_seen("fx-2", dt.date.today(), 30)
+        assert not store.recently_seen("fx-3", dt.date.today(), 30)
+    finally:
+        store.close()
+
+
+def test_seen_marks_only_handled_leads(tmp_path, monkeypatch):
+    client, seen_path = live_env(monkeypatch, tmp_path)
+    pushed = candidate(1)
+    cold = candidate(2, lead_tier="Cold", lead_score=10, email=None)
+    rejected = candidate(3)
+    unqualified = candidate(4, phone="+15125550104")
+    run_dir = write_run(tmp_path, [pushed, cold, rejected, unqualified],
+                        [qualified(pushed), qualified(rejected, lead_score=90)])
+    assert push(run_dir) == 1
+    assert report_of(run_dir, "push_report.json")["counts"] == {"created": 1, "rejected": 1}
+    store = SeenStore(seen_path)
+    try:
+        today = dt.date.today()
+        assert store.recently_seen("fx-1", today, 30)
+        assert store.recently_seen("fx-2", today, 30)
+        assert not store.recently_seen("fx-3", today, 30)
+        assert not store.recently_seen("fx-4", today, 30)
+        outcomes = dict(store.db.execute("SELECT place_id, last_outcome FROM seen").fetchall())
+        assert outcomes == {"fx-1": "created", "fx-2": "cold_no_email"}
+    finally:
+        store.close()
