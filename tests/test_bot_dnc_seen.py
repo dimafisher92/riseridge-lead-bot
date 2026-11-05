@@ -28,6 +28,7 @@ def test_seen_window():
     assert s.recently_seen("p1", dt.date(2026, 11, 30), 30)
     assert not s.recently_seen("p1", dt.date(2026, 12, 1), 30)
     assert not s.recently_seen("other", dt.date(2026, 11, 2), 30)
+    s.close()
 
 
 def test_seen_mark_moves_last_seen(tmp_path):
@@ -36,4 +37,6 @@ def test_seen_mark_moves_last_seen(tmp_path):
     s.mark("p1", dt.date(2026, 1, 1), "Cold")
     s.mark("p1", dt.date(2026, 11, 1), "Warm")
     s.close()
-    assert SeenStore(path).recently_seen("p1", dt.date(2026, 11, 20), 30)
+    reopened = SeenStore(path)
+    assert reopened.recently_seen("p1", dt.date(2026, 11, 20), 30)
+    reopened.close()
