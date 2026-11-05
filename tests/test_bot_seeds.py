@@ -47,3 +47,23 @@ def test_money_query_is_not_repeated(tmp_path):
         encoding="utf-8")
     p = city_plan(load_seeds(str(path)), "HVAC", "Austin, TX")
     assert p.queries == ("hvac in Austin, TX",)
+
+
+SEEDS_TAIL = ('scraper_depth = 1\nmax_enrich_per_city = 5\nseen_days = 30\n'
+              '[niches."HVAC"]\nmoney_query = "ac repair {city}"\nmoney_keyword = "ac {city_name}"\n'
+              'queries = []\n[cities."Austin, TX"]\nareas = ["Austin, TX"]\narea_codes = ["512"]\n')
+
+
+@pytest.mark.parametrize("line", ['live = "false"', 'live = "true"', "live = 1", "live = 0"])
+def test_live_must_be_a_toml_boolean(tmp_path, line):
+    path = tmp_path / "seeds.toml"
+    path.write_text(line + "\n" + SEEDS_TAIL, encoding="utf-8")
+    with pytest.raises(SeedError, match="live"):
+        load_seeds(str(path))
+
+
+@pytest.mark.parametrize("line,expected", [("live = true", True), ("live = false", False), ("", False)])
+def test_live_boolean_values(tmp_path, line, expected):
+    path = tmp_path / "seeds.toml"
+    path.write_text(line + "\n" + SEEDS_TAIL, encoding="utf-8")
+    assert load_seeds(str(path)).live is expected

@@ -36,7 +36,10 @@ class CityPlan:
 def load_seeds(path=DEFAULT_SEEDS_PATH):
     with open(path, "rb") as fh:
         raw = tomllib.load(fh)
-    return Seeds(bool(raw.get("live", False)), int(raw["scraper_depth"]),
+    live = raw.get("live", False)
+    if not isinstance(live, bool):  # live = "false" must not switch pushes on
+        raise SeedError(f"live must be true or false (a TOML boolean), not {live!r}")
+    return Seeds(live is True, int(raw["scraper_depth"]),
                  int(raw["max_enrich_per_city"]), int(raw["seen_days"]),
                  dict(raw["niches"]), dict(raw["cities"]))
 

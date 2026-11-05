@@ -321,3 +321,32 @@ def test_collect_auth_error_exits_3(tmp_path, monkeypatch, capsys):
                      "--today", "2026-11-06"]) == 3
     out = capsys.readouterr().out
     assert "GHL" in out and len(out.strip().splitlines()) == 1
+
+
+def test_seen_uses_the_run_date(tmp_path, monkeypatch):
+    _, seen_path = live_env(monkeypatch, tmp_path)
+    c = candidate()
+    run_dir = write_run(tmp_path, [c], [qualified(c)], dropped=[
+        {"place_id": "fx-closed", "business_name": "x", "reason": "closed"}])
+    assert push(run_dir) == 0
+    store = SeenStore(seen_path)
+    try:
+        days = dict(store.db.execute("SELECT place_id, last_seen FROM seen").fetchall())
+    finally:
+        store.close()
+    assert days == {"fx-1": "2026-11-06", "fx-closed": "2026-11-06"}  # from the run_id prefix
+
+
+def test_seen_falls_back_to_today_without_a_dated_run_id(tmp_path, monkeypatch):
+    _, seen_path = live_env(monkeypatch, tmp_path)
+    c = candidate()
+    run_dir = write_run(tmp_path, [c], [qualified(c)])
+    (run_dir / "report.json").write_text(json.dumps({"run_id": "manual", "dnc_checked": True}),
+                                         encoding="utf-8")
+    assert push(run_dir) == 0
+    store = SeenStore(seen_path)
+    try:
+        days = dict(store.db.execute("SELECT place_id, last_seen FROM seen").fetchall())
+    finally:
+        store.close()
+    assert days == {"fx-1": dt.date.today().isoformat()}

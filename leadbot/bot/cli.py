@@ -102,6 +102,14 @@ def _mark_seen(run_dir, candidates, outcomes, today):
         store.close()
 
 
+def _run_date(report):
+    """The collect date from the run_id prefix (it honours --today), else today."""
+    try:
+        return dt.date.fromisoformat(str(report.get("run_id", ""))[:10])
+    except ValueError:
+        return dt.date.today()
+
+
 def cmd_push(args):
     run_dir = os.path.dirname(os.path.abspath(args.file))
     with open(os.path.join(run_dir, "report.json"), encoding="utf-8") as fh:
@@ -184,7 +192,7 @@ def cmd_push(args):
         outcomes = {}
         for r in results:  # the first line for a lead decides; a duplicate line never overrides it
             outcomes.setdefault(r["bot_run_id"], r["outcome"])
-        _mark_seen(run_dir, candidates, outcomes, dt.date.today())
+        _mark_seen(run_dir, candidates, outcomes, _run_date(report))
     counts = dict(Counter(r["outcome"] for r in results))
     name = "push_report.json" if live else "dry_run_report.json"
     with open(os.path.join(run_dir, name), "w", encoding="utf-8") as fh:
