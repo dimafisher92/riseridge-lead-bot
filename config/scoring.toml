@@ -12,6 +12,7 @@ rank_gap = 10
 technical_debt = 5
 competitor_gap = 5
 retention_niche = 5
+negative_signal = 30  # subtracted once per TRUE negative (inactive_listing)
 
 [tiers]
 hot = 70

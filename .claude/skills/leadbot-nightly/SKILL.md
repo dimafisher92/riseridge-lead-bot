@@ -44,7 +44,7 @@ For each candidate that needs text:
 
    `{"bot_run_id": "<copied exactly from the candidate>", "audit_summary": "...", "call_opener": "..."}`
 
-   - `audit_summary`: at most 3 short lines separated by newlines, 400 characters in total, facts a rep can say out loud. Use only what `evidence` states. Never invent numbers. If a needed fact is missing, say "unknown".
+   - `audit_summary`: at most 3 short lines separated by newlines, 400 characters in total, facts a rep can say out loud. Use only what `evidence` and `notes` state. Never invent numbers. If a needed fact is missing, say "unknown". A `notes` item is context (for example "not in the top 60 on Maps for 'therapist austin'"), never a problem signal: do not present it as a weakness. `negatives` lowers the score and is not a pitch point.
    - `call_opener`: one sentence under 30 words (29 at most) that names the business and its primary signal. Friendly, no hype.
 3. One line per `bot_run_id`. `push` takes every other field (name, phone, score, tier, signals) from `candidates.jsonl`; a line with any other key is rejected, and a second line for the same lead is rejected as `duplicate line`.
 

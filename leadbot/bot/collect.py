@@ -10,7 +10,8 @@ from leadbot.bot.dnc import area_code, is_listed
 from leadbot.bot.domain_age import registrable_domain
 from leadbot.bot.score import lead_score, lead_tier, primary_flag
 from leadbot.bot.scrape import ScrapeError
-from leadbot.bot.signals import Enrichment, detect, gbp_status, rank_info, true_flags
+from leadbot.bot.signals import (Enrichment, TRUE, chain_keys, detect, gbp_status, negatives,
+                                 rank_info, true_flags)
 from leadbot.ghl.client import GHLAuthError
 
 
@@ -64,11 +65,11 @@ def _checked(check, url):
         return None
 
 
-def _enrich(place, money, plan, deps, today):
+def _enrich(place, money, plan, deps, today, chains):
     site = _checked(deps.site_check, place.website) if place.website else None
     registered = _checked(deps.domain_age, place.website) if place.website else None
     enrich = Enrichment(site, None, registered)
-    rank = rank_info(place.place_id, money, plan.money_keyword)
+    rank = rank_info(place.place_id, money, plan.money_keyword, chains)
     signals = detect(place, enrich, rank, today)
     if site is not None and site.reachable and true_flags(signals):
         enrich = Enrichment(site, _checked(deps.pagespeed, place.website), registered)
@@ -137,21 +138,24 @@ def collect_city(plan, seeds, scoring, schema, deps, *, run_id, run_dir, today, 
     kept = unique
     dropped += [_drop_row(p, "over_nightly_cap") for p in kept[seeds.max_enrich:]]
     kept = kept[:seeds.max_enrich]
+    chains = chain_keys(places)  # once per city, over every scraped listing
 
-    enriched = [(place, *_enrich(place, money, plan, deps, today)) for place in kept]
+    enriched = [(place, *_enrich(place, money, plan, deps, today, chains)) for place in kept]
     emails = [_email(place, enrich) for place, enrich, _, _ in enriched]
     shared = {e for e, count in Counter(e for e in emails if e).items() if count > 1}
     records = []
     for n, ((place, enrich, rank, signals), email) in enumerate(zip(enriched, emails), 1):
         flags = true_flags(signals)
-        score = lead_score(flags, plan.niche, scoring)
+        negs = negatives(place, today)
+        true_negs = [k for k, s in negs.items() if s.state == TRUE]
+        score = lead_score(flags, plan.niche, scoring, negatives=true_negs)
         flag = primary_flag(flags, scoring)
         records.append(cand.build_candidate(
             place, signals, score=score, tier=lead_tier(score, scoring),
             primary=schema.signals[flag] if flag else None, plan=plan,
             bot_run_id=f"{run_id}-{n:04d}",
             email=None if email in shared else email,
-            gbp_status=gbp_status(place), rank=rank))
+            gbp_status=gbp_status(place), rank=rank, negatives=negs))
 
     cand.write_jsonl(os.path.join(run_dir, "candidates.jsonl"), records)
     cand.write_jsonl(os.path.join(run_dir, "dropped.jsonl"), dropped)

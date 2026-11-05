@@ -28,13 +28,14 @@ def load_scoring(path=DEFAULT_SCORING_PATH):
                    tuple(raw.get("retention_niches", ())))
 
 
-def lead_score(true_signals, niche, scoring, ads_spend=None):
+def lead_score(true_signals, niche, scoring, ads_spend=None, negatives=()):
     weights = scoring.weights
     total = sum(weights[s] for s in SIGNAL_ORDER if s in true_signals)
     if "google_ads_spend" in true_signals and ads_spend and ads_spend > 3000:
         total += weights["google_ads_spend_over_3k_bonus"]
     if niche in scoring.retention_niches:
         total += weights["retention_niche"]
+    total -= weights["negative_signal"] * len(tuple(negatives))
     return max(0, min(total, 100))
 
 

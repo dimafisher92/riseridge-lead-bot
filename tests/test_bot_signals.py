@@ -1,8 +1,8 @@
 import datetime as dt
 
 from leadbot.bot.scrape import Place
-from leadbot.bot.signals import (FALSE, TRUE, UNKNOWN, Enrichment, RankInfo, Signal, detect,
-                                 gbp_status, rank_info, true_flags)
+from leadbot.bot.signals import (FALSE, TRUE, UNKNOWN, Enrichment, RankInfo, Signal, brand_key,
+                                 chain_keys, detect, gbp_status, negatives, rank_info, true_flags)
 from leadbot.bot.site_check import SiteCheck
 
 TODAY = dt.date(2026, 11, 6)
@@ -34,14 +34,41 @@ def test_broken_website_cases():
     assert sig(place(website=None), Enrichment(None))["broken_website"].state == TRUE
     assert sig(enrich=Enrichment(SiteCheck(False)))["broken_website"].state == TRUE
     assert sig(enrich=Enrichment(None))["broken_website"].state == UNKNOWN
-    one = SiteCheck(True, "u", False, True, True, None)
-    two = SiteCheck(True, "u", False, False, True, None)
-    assert sig(enrich=Enrichment(one))["broken_website"].state == FALSE
-    broken = sig(enrich=Enrichment(two))["broken_website"]
+    no_form = SiteCheck(True, "u", False, True, True, None)
+    no_form_no_call = SiteCheck(True, "u", False, False, True, None)
+    assert sig(enrich=Enrichment(no_form))["broken_website"].state == FALSE
+    broken = sig(enrich=Enrichment(no_form_no_call))["broken_website"]
     assert broken.state == TRUE
     assert "no lead form" in broken.evidence and "no click-to-call link" in broken.evidence
-    assert sig(enrich=Enrichment(one, pagespeed=30))["broken_website"].state == TRUE
-    assert sig(enrich=Enrichment(one, pagespeed=40))["broken_website"].state == FALSE
+    assert sig(enrich=Enrichment(no_form, pagespeed=30))["broken_website"].state == TRUE
+    assert sig(enrich=Enrichment(no_form, pagespeed=40))["broken_website"].state == FALSE
+
+
+def test_missing_tracking_tag_alone_is_not_broken():
+    tag_missing = SiteCheck(True, "u", True, True, False, None)
+    result = sig(enrich=Enrichment(tag_missing))["broken_website"]
+    assert result.state == FALSE and "no conversion tag" in result.evidence
+    call_only = SiteCheck(True, "u", False, True, False, None)  # no form, no tag, call link present
+    assert sig(enrich=Enrichment(call_only))["broken_website"].state == FALSE
+
+
+def test_no_form_and_no_call_link_is_broken_and_lists_the_tag():
+    result = sig(enrich=Enrichment(SiteCheck(True, "u", False, False, False, None)))["broken_website"]
+    assert result.state == TRUE
+    assert "no conversion tag" in result.evidence
+
+
+def test_blocked_site_is_unknown():
+    blocked = SiteCheck(False, "u", blocked=True, status=403)
+    result = sig(enrich=Enrichment(blocked))["broken_website"]
+    assert result == Signal(UNKNOWN, "website refused the bot's request (HTTP 403)")
+
+
+def test_unreachable_site_evidence_includes_status_when_known():
+    plain = sig(enrich=Enrichment(SiteCheck(False)))["broken_website"]
+    assert plain == Signal(TRUE, "website https://test.example.com/ did not load")
+    missing = sig(enrich=Enrichment(SiteCheck(False, "u", status=404)))["broken_website"]
+    assert missing == Signal(TRUE, "website https://test.example.com/ did not load (HTTP 404)")
 
 
 def test_new_business_cases():
@@ -81,10 +108,15 @@ def test_new_business_reviews_without_dates():
 
 
 def test_rank_gap_cases():
-    assert sig(rank=RankInfo("k", 20, 3, 30.0))["rank_gap"].state == FALSE
-    assert sig(rank=RankInfo("k", 20, 4, 30.0))["rank_gap"].state == TRUE
-    missing = sig(rank=RankInfo("k", 20, None, 30.0))["rank_gap"]
-    assert missing.state == TRUE and "not in the top 20" in missing.evidence
+    pack = sig(rank=RankInfo("k", 20, 3, 30.0))["rank_gap"]
+    assert pack == Signal(FALSE, "#3 on Maps for 'k' (map pack)")
+    near = sig(rank=RankInfo("k", 60, 4, 30.0))["rank_gap"]
+    assert near == Signal(TRUE, "#4 on Maps for 'k', just outside the map pack")
+    assert sig(rank=RankInfo("k", 60, 20, 30.0))["rank_gap"].state == TRUE
+    far = sig(rank=RankInfo("k", 60, 21, 30.0))["rank_gap"]
+    assert far == Signal(FALSE, "#21 on Maps for 'k'")
+    missing = sig(rank=RankInfo("k", 60, None, 30.0))["rank_gap"]
+    assert missing == Signal(UNKNOWN, "not in the top 60 on Maps for 'k'")
     assert sig(rank=RankInfo("k", 0, None, None))["rank_gap"].state == UNKNOWN
 
 
@@ -92,6 +124,16 @@ def test_competitor_gap_cases():
     assert sig(place(review_count=10), rank=RankInfo("k", 20, 5, 30.0))["competitor_gap"].state == TRUE
     assert sig(place(review_count=11), rank=RankInfo("k", 20, 5, 30.0))["competitor_gap"].state == FALSE
     assert sig(rank=RankInfo("k", 0, None, None))["competitor_gap"].state == UNKNOWN
+
+
+def test_competitor_gap_unknown_when_place_not_in_money_results():
+    result = sig(place(review_count=1), rank=RankInfo("k", 60, None, 300.0))["competitor_gap"]
+    assert result == Signal(UNKNOWN, "not in the results for 'k'")
+
+
+def test_competitor_gap_unknown_without_independent_rivals():
+    result = sig(rank=RankInfo("k", 20, 5, None))["competitor_gap"]
+    assert result == Signal(UNKNOWN, "no independent competitors to compare")
 
 
 def test_ad_and_audit_signals_are_unknown_in_b1():
@@ -112,3 +154,51 @@ def test_rank_info_excludes_self_from_top3():
     assert (r.position, r.checked, r.top3_avg_reviews) == (2, 4, 70.0)
     assert rank_info("zz", ps, "k").position is None
     assert rank_info("a", [], "k") == RankInfo("k", 0, None, None)
+
+
+def named(place_id, name, reviews):
+    return place(place_id=place_id, name=name, review_count=reviews)
+
+
+def test_brand_key():
+    assert brand_key("Acme Counseling - Austin") == "acme counseling"
+    assert brand_key("Acme Counseling | Round Rock") == "acme counseling"
+    assert brand_key("Acme Counseling \u2013 North") == "acme counseling"
+    assert brand_key("  ACME Counseling (Downtown) ") == "acme counseling"
+    assert brand_key("Plain Name") == "plain name"
+
+
+def test_chain_keys_need_more_than_one_listing():
+    ps = [named("a", "Acme Counseling - Austin", 5), named("b", "Acme Counseling (Cedar Park)", 5),
+          named("c", "Solo Therapy", 5)]
+    assert chain_keys(ps) == frozenset({"acme counseling"})
+
+
+def test_chain_rivals_are_excluded_from_the_top3_average():
+    ps = [named("a1", "Acme Counseling - Austin", 1000), named("a2", "Acme Counseling - Cedar Park", 900),
+          named("me", "Me Therapy", 10), named("x", "Indie One", 30), named("y", "Indie Two", 60),
+          named("z", "Indie Three", 90), named("w", "Indie Four", 600)]
+    keys = chain_keys(ps)
+    r = rank_info("me", ps, "k", keys)
+    assert r.position == 3
+    assert r.top3_avg_reviews == 60.0  # x, y, z only
+    assert rank_info("me", ps, "k").top3_avg_reviews == (1000 + 900 + 30) / 3  # default: no chains
+
+
+def test_all_rivals_chains_gives_no_average():
+    ps = [named("a1", "Acme Counseling - Austin", 1000), named("a2", "Acme Counseling - Cedar Park", 900),
+          named("me", "Me Therapy", 10)]
+    r = rank_info("me", ps, "k", chain_keys(ps))
+    assert r.top3_avg_reviews is None
+    assert sig(place(review_count=10), rank=r)["competitor_gap"].state == UNKNOWN
+
+
+def test_inactive_listing_window():
+    def at(days):
+        dates = (TODAY - dt.timedelta(days=days),)
+        return negatives(place(review_dates=dates), TODAY)["inactive_listing"]
+    assert at(731).state == TRUE and "over 2 years ago" in at(731).evidence
+    assert at(730).state == FALSE
+    assert negatives(place(review_dates=()), TODAY)["inactive_listing"].state == UNKNOWN
+    newest = negatives(place(review_dates=(dt.date(2020, 1, 1), TODAY)), TODAY)
+    assert newest["inactive_listing"].state == FALSE  # uses the newest date, not the oldest

@@ -6,7 +6,7 @@ import os
 from leadbot.bot.score import SIGNAL_ORDER
 from leadbot.bot.signals import TRUE, UNKNOWN
 
-EXTRA_KEYS = ("evidence", "unknown", "place_id")
+EXTRA_KEYS = ("evidence", "unknown", "place_id", "negatives", "notes")
 # Claude writes only these two text fields; a qualified line carries them plus bot_run_id.
 TEXT_FIELDS = ("audit_summary", "call_opener")
 QUALIFIED_KEYS = ("bot_run_id",) + TEXT_FIELDS
@@ -20,7 +20,14 @@ class QualifiedError(ValueError):
 
 
 def build_candidate(place, signals, *, score, tier, primary, plan, bot_run_id, email,
-                    gbp_status, rank):
+                    gbp_status, rank, negatives=None):
+    negatives = negatives or {}
+    true_negatives = [k for k, s in negatives.items() if s.state == TRUE]
+    evidence = {k: s.evidence for k, s in signals.items() if s.state != UNKNOWN}
+    evidence.update({k: negatives[k].evidence for k in true_negatives})
+    # UNKNOWN rank/competitor evidence is context for the rep, never a problem signal.
+    notes = {k: signals[k].evidence for k in ("rank_gap", "competitor_gap")
+             if signals[k].state == UNKNOWN}
     return {
         "business_name": place.name,
         "phone": place.phone,
@@ -41,9 +48,11 @@ def build_candidate(place, signals, *, score, tier, primary, plan, bot_run_id, e
         "audit_summary": "",
         "call_opener": "",
         "bot_run_id": bot_run_id,
-        "evidence": {k: s.evidence for k, s in signals.items() if s.state != UNKNOWN},
+        "evidence": evidence,
         "unknown": [s for s in SIGNAL_ORDER if signals[s].state == UNKNOWN],
         "place_id": place.place_id,
+        "negatives": true_negatives,
+        "notes": notes,
     }
 
 

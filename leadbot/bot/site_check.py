@@ -1,6 +1,7 @@
 """Homepage check for the broken-website signal (spec 3.4)."""
 
 import re
+import urllib.error
 from dataclasses import dataclass
 
 from leadbot.bot import http
@@ -19,6 +20,8 @@ class SiteCheck:
     has_tel: bool = False
     has_tracking: bool = False
     email: str | None = None
+    blocked: bool = False  # the site refused the bot (401/403/429/503): not proof it is broken
+    status: int | None = None
 
 
 def inspect_html(final_url, html):
@@ -28,11 +31,23 @@ def inspect_html(final_url, html):
                      any(t in lower for t in TRACKING), mail.group(1).lower() if mail else None)
 
 
+BLOCK_STATUSES = (401, 403, 429, 503)
+
+
+def _failed(final_url, code):
+    return SiteCheck(False, final_url, blocked=code in BLOCK_STATUSES, status=code)
+
+
 def check_site(url, fetch=http.get_text):
     try:
         final_url, status, html = fetch(url)
-    except Exception:  # noqa: BLE001 - any network failure means "did not load"
+    except urllib.error.HTTPError as exc:
+        try:
+            return _failed(exc.geturl() or url, exc.code)
+        finally:
+            exc.close()
+    except Exception:  # noqa: BLE001 - DNS, refused connection, timeout or TLS: "did not load"
         return SiteCheck(False)
     if status >= 400:
-        return SiteCheck(False, final_url)
+        return _failed(final_url, status)
     return inspect_html(final_url, html)

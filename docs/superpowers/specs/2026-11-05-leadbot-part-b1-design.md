@@ -100,7 +100,7 @@ Then, within the run, a later place with the same phone as a kept one is dropped
 
 ### 3.4 Enrichment
 
-- **Site check:** GET the homepage with a 15 s timeout and the bot's User-Agent; follow redirects. Record: reachable, final URL, has `<form`, has `tel:` link, has gtag/`googletagmanager.com`/`fbq(`, first `mailto:` address. Unreachable or error means `reachable: false`.
+- **Site check:** GET the homepage with a 15 s timeout and the bot's User-Agent; follow redirects. Record: reachable, final URL, has `<form`, has `tel:` link, has gtag/`googletagmanager.com`/`fbq(`, first `mailto:` address. A refusal (HTTP 401, 403, 429 or 503, as a status or an `HTTPError`) is recorded as `blocked: true` with the status: the site may be fine, the bot was refused. Any other HTTP error status is `reachable: false` with the status; a network failure (DNS, refused connection, timeout, TLS) is `reachable: false` with no status.
 - **PageSpeed:** PageSpeed Insights v5 `runPagespeed?strategy=mobile` without a key, only for places that already have another TRUE signal. Quota or error means `unknown`.
 - **Domain age:** RDAP lookup of the registrable domain (`https://rdap.org/domain/<domain>`), registration event date. Error means `unknown`.
 
@@ -111,21 +111,23 @@ Each signal is TRUE, FALSE or UNKNOWN, with a one-line evidence string. UNKNOWN 
 | Signal | TRUE when |
 | --- | --- |
 | `gbp_unverified_or_suspended` | `owner` is empty. GBP Status = Unverified. "Suspended suspected" is not detectable from Maps data in B1 and is never set. |
-| `broken_website` | no website, site unreachable, or at least 2 of: no form, no `tel:` link, no tracking tag, PageSpeed mobile under 40. |
+| `broken_website` | no website; or the site did not load (evidence adds the HTTP status when known); or the page loaded and (no lead form AND no `tel:` link) OR mobile PageSpeed under 40. A missing tracking tag is listed in the evidence but never makes it TRUE. A site that refused the bot (`blocked`) is UNKNOWN. |
 | `new_business` | domain registered under 6 months (183 days) ago, OR (every review is visible, i.e. the dated reviews number at least `review_count` ≥ 1, AND the oldest is at most 92 days old AND `review_count` ≤ 15). When only some reviews are visible and the domain is not recent, the signal is UNKNOWN ("only N of M reviews visible"): Maps shows a sample, and a hidden older review would make TRUE wrong. More than 15 reviews, or an oldest visible review over 92 days old, is FALSE. |
-| `rank_gap` | the place's position in the money keyword query is worse than 3, or it does not appear in that query's results (then evidence says "not in the top N for <keyword>"). |
-| `competitor_gap` | average `review_count` of the top 3 in the money keyword query is at least 3× this place's. |
+| `rank_gap` | the place's position in the money keyword query is 4 to 20 (just outside the map pack). Positions 1-3 (`MAP_PACK`) are FALSE, and 21 or worse (`NEAR_MISS_MAX` = 20) is FALSE too: a listing that far down is not a near miss. Not in the money results is UNKNOWN, evidence "not in the top N on Maps for '<keyword>'" (kept as a note on the candidate). No money results at all is UNKNOWN. |
+| `competitor_gap` | only evaluated when the place is in the money results (otherwise UNKNOWN). The rivals are the first 3 money places excluding the place itself and chain listings (a brand key, the lowercased name cut at the first " - ", " | ", " – " or " (", that appears on more than one listing among all places scraped for the city in that run). No independent rival is UNKNOWN. TRUE when the rivals' average `review_count` is at least 3× this place's (minimum 1). |
 | `google_ads_spend`, `meta_ads_active`, `technical_debt` | always UNKNOWN in B1. |
+
+**Negative signal** (`negatives(place, today)`, never a GHL flag): `inactive_listing` is TRUE when the newest visible review is more than 730 days (`INACTIVE_DAYS`) old; FALSE otherwise; UNKNOWN when the place has no review dates. It lowers the score and is not part of `signals`.
 
 Relative review ages ("2 weeks ago", "Edited a month ago", "a year ago") are parsed to an approximate age in days; unparseable text means UNKNOWN for that review.
 
 ### 3.6 Scoring (`config/scoring.toml`)
 
-Weights from SOP Step 4: gbp 25, google ads 20 (+10 over $3k/month), meta ads 10, broken site 15, new business 15, rank gap 10, technical debt 5, competitor gap 5, retention niche +5 (Counselors / therapists listed), negative −30 or drop. Capped at 100. Tiers: Hot 70+, Warm 45-69, Cold under 45. `primary_signal` = the GHL category of the highest-weight TRUE signal (ties: table order). B1 maximum is 75.
+Weights from SOP Step 4: gbp 25, google ads 20 (+10 over $3k/month), meta ads 10, broken site 15, new business 15, rank gap 10, technical debt 5, competitor gap 5, retention niche +5 (Counselors / therapists listed), negative −30 per TRUE negative (`negative_signal`, applied after the positives and the retention bonus, floor 0). Capped at 100. Tiers: Hot 70+, Warm 45-69, Cold under 45. `primary_signal` = the GHL category of the highest-weight TRUE signal (ties: table order). B1 maximum is 75.
 
 ### 3.7 Candidate record
 
-One JSON object per line, carrying the part A payload keys (`business_name, phone, email, website, niche, city, gbp_url, gbp_status, review_count, rating, money_keyword, current_rank, signals, primary_signal, lead_score, lead_tier, bot_run_id`) plus `evidence` (signal → text), `unknown` (list of signals), `place_id`, and empty `audit_summary` / `call_opener` for Claude to fill. `est_google_ads_spend` and `meta_ads_active` are left out (null, so part A writes nothing).
+One JSON object per line, carrying the part A payload keys (`business_name, phone, email, website, niche, city, gbp_url, gbp_status, review_count, rating, money_keyword, current_rank, signals, primary_signal, lead_score, lead_tier, bot_run_id`) plus `evidence` (signal → text; also the evidence of a TRUE negative), `unknown` (list of signals), `place_id`, `negatives` (names of TRUE negative signals, e.g. `["inactive_listing"]`; never sent to GHL), `notes` (evidence of UNKNOWN `rank_gap` / `competitor_gap`, e.g. "not in the top 60 on Maps for 'therapist austin'"; context for the rep, never sent to GHL), and empty `audit_summary` / `call_opener` for Claude to fill. `est_google_ads_spend` and `meta_ads_active` are left out (null, so part A writes nothing).
 
 ### 3.8 Claude step (nightly skill)
 

@@ -10,6 +10,9 @@ NEW_REVIEW_DAYS = 92
 NEW_MAX_REVIEWS = 15
 SLOW_PAGESPEED = 40
 MAP_PACK = 3
+NEAR_MISS_MAX = 20
+INACTIVE_DAYS = 730
+_BRAND_CUTS = (" - ", " | ", " – ", " (")
 
 
 @dataclass(frozen=True)
@@ -33,9 +36,26 @@ class RankInfo:
     top3_avg_reviews: float | None
 
 
-def rank_info(place_id, money_places, keyword):
+def brand_key(name):
+    """Lowercased name cut at the first " - ", " | ", " – " or " (" (a location suffix)."""
+    key = name.lower()
+    cuts = [key.index(c) for c in _BRAND_CUTS if c in key]
+    return (key[:min(cuts)] if cuts else key).strip()
+
+
+def chain_keys(places):
+    """Brand keys that appear on more than one listing among the places scraped in a run."""
+    counts = {}
+    for place in places:
+        key = brand_key(place.name)
+        counts[key] = counts.get(key, 0) + 1
+    return frozenset(key for key, n in counts.items() if n > 1)
+
+
+def rank_info(place_id, money_places, keyword, chain_keys=frozenset()):
     position = next((i for i, p in enumerate(money_places, 1) if p.place_id == place_id), None)
-    rivals = [p.review_count for p in money_places if p.place_id != place_id][:3]
+    rivals = [p.review_count for p in money_places
+              if p.place_id != place_id and brand_key(p.name) not in chain_keys][:3]
     average = sum(rivals) / len(rivals) if rivals else None
     return RankInfo(keyword, len(money_places), position, average)
 
@@ -56,20 +76,24 @@ def _site(place, enrich):
     site = enrich.site
     if site is None:
         return Signal(UNKNOWN, "website not checked")
+    if site.blocked:
+        return Signal(UNKNOWN, f"website refused the bot's request (HTTP {site.status})")
     if not site.reachable:
-        return Signal(TRUE, f"website {place.website} did not load")
+        code = f" (HTTP {site.status})" if site.status else ""
+        return Signal(TRUE, f"website {place.website} did not load{code}")
     fails = []
     if not site.has_form:
         fails.append("no lead form")
     if not site.has_tel:
         fails.append("no click-to-call link")
     if not site.has_tracking:
-        fails.append("no conversion tag (gtag/GTM/Meta Pixel)")
-    if enrich.pagespeed is not None and enrich.pagespeed < SLOW_PAGESPEED:
+        fails.append("no conversion tag (gtag/GTM/Meta Pixel)")  # information only
+    slow = enrich.pagespeed is not None and enrich.pagespeed < SLOW_PAGESPEED
+    if slow:
         fails.append(f"mobile PageSpeed {enrich.pagespeed}")
-    if len(fails) >= 2:
+    if (not site.has_form and not site.has_tel) or slow:
         return Signal(TRUE, "homepage: " + ", ".join(fails))
-    return Signal(FALSE, "homepage: " + (fails[0] if fails else "form, call link and tag present"))
+    return Signal(FALSE, "homepage: " + (", ".join(fails) or "form, call link and tag present"))
 
 
 def _new(place, enrich, today):
@@ -94,21 +118,39 @@ def _new(place, enrich, today):
 
 
 def _rank(rank):
+    kw = rank.keyword
     if rank.checked == 0:
-        return Signal(UNKNOWN, f"no Maps results for '{rank.keyword}'")
-    if rank.position is None:
-        return Signal(TRUE, f"not in the top {rank.checked} on Maps for '{rank.keyword}'")
-    if rank.position > MAP_PACK:
-        return Signal(TRUE, f"#{rank.position} on Maps for '{rank.keyword}'")
-    return Signal(FALSE, f"#{rank.position} on Maps for '{rank.keyword}' (map pack)")
+        return Signal(UNKNOWN, f"no Maps results for '{kw}'")
+    pos = rank.position
+    if pos is None:
+        return Signal(UNKNOWN, f"not in the top {rank.checked} on Maps for '{kw}'")
+    if pos <= MAP_PACK:
+        return Signal(FALSE, f"#{pos} on Maps for '{kw}' (map pack)")
+    if pos <= NEAR_MISS_MAX:
+        return Signal(TRUE, f"#{pos} on Maps for '{kw}', just outside the map pack")
+    return Signal(FALSE, f"#{pos} on Maps for '{kw}'")
 
 
 def _gap(place, rank):
+    if rank.position is None:
+        return Signal(UNKNOWN, f"not in the results for '{rank.keyword}'")
     average = rank.top3_avg_reviews
     if average is None:
-        return Signal(UNKNOWN, "no competitors to compare")
+        return Signal(UNKNOWN, "no independent competitors to compare")
     text = f"top 3 for '{rank.keyword}' average {average:.0f} reviews vs {place.review_count}"
     return Signal(TRUE if average >= 3 * max(place.review_count, 1) else FALSE, text)
+
+
+def negatives(place, today):
+    """Signals that lower the score. Never GHL flags, so they are kept apart from detect()."""
+    dates = place.review_dates
+    if not dates:
+        return {"inactive_listing": Signal(UNKNOWN, "no review dates")}
+    newest = dates[-1]
+    if (today - newest).days > INACTIVE_DAYS:
+        return {"inactive_listing": Signal(TRUE, f"newest visible review {newest.isoformat()}, "
+                                                 "over 2 years ago")}
+    return {"inactive_listing": Signal(FALSE, f"newest visible review {newest.isoformat()}")}
 
 
 def detect(place, enrich, rank, today):

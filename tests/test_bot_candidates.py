@@ -6,7 +6,8 @@ BASE = {"business_name": "Bright Path Counseling (fictional)", "phone": "+151255
         "email": None, "niche": "Counselors / therapists", "signals": ["new_business"],
         "primary_signal": "New Biz", "lead_score": 20, "lead_tier": "Cold",
         "audit_summary": "", "call_opener": "", "bot_run_id": "r-0001",
-        "evidence": {"new_business": "4 reviews"}, "unknown": [], "place_id": "fx-1"}
+        "evidence": {"new_business": "4 reviews"}, "unknown": [], "place_id": "fx-1",
+        "negatives": ["inactive_listing"], "notes": {"rank_gap": "not in the top 60"}}
 SUMMARY = "Only 4 reviews, all recent."
 OPENER = "Hi, congrats on opening Bright Path Counseling."
 
@@ -27,6 +28,7 @@ def test_needs_text():
 def test_to_payload_drops_extra_keys():
     payload = to_payload(BASE)
     assert "evidence" not in payload and "place_id" not in payload and "unknown" not in payload
+    assert "negatives" not in payload and "notes" not in payload
     assert payload["bot_run_id"] == "r-0001"
 
 

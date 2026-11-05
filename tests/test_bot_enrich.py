@@ -1,4 +1,7 @@
 import datetime as dt
+import urllib.error
+
+import pytest
 
 from leadbot.bot.domain_age import registrable_domain, registration_date
 from leadbot.bot.pagespeed import mobile_score
@@ -26,7 +29,28 @@ def test_meta_pixel_counts_as_tracking():
 
 
 def test_error_status_is_unreachable():
-    assert check_site("https://x.example.com/", fetch=lambda url: (url, 404, "")).reachable is False
+    r = check_site("https://x.example.com/", fetch=lambda url: (url, 404, ""))
+    assert r == SiteCheck(False, "https://x.example.com/", status=404)
+
+
+@pytest.mark.parametrize("code", [401, 403, 429, 503])
+def test_refusal_statuses_are_blocked(code):
+    r = check_site("https://x.example.com/", fetch=lambda url: (url, code, ""))
+    assert r == SiteCheck(False, "https://x.example.com/", blocked=True, status=code)
+
+
+def test_http_error_403_is_blocked():
+    def refuse(url):
+        raise urllib.error.HTTPError(url, 403, "Forbidden", {}, None)
+    r = check_site("https://x.example.com/", fetch=refuse)
+    assert (r.reachable, r.blocked, r.status) == (False, True, 403)
+
+
+def test_http_error_404_is_not_blocked():
+    def gone(url):
+        raise urllib.error.HTTPError(url, 404, "Not Found", {}, None)
+    r = check_site("https://x.example.com/", fetch=gone)
+    assert (r.reachable, r.blocked, r.status) == (False, False, 404)
 
 
 def test_network_error_is_unreachable():

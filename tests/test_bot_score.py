@@ -12,7 +12,7 @@ def test_weights_match_sop():
         "gbp_unverified_or_suspended": 25, "google_ads_spend": 20,
         "google_ads_spend_over_3k_bonus": 10, "meta_ads_active": 10, "broken_website": 15,
         "new_business": 15, "rank_gap": 10, "technical_debt": 5, "competitor_gap": 5,
-        "retention_niche": 5}
+        "retention_niche": 5, "negative_signal": 30}
     assert (S.hot, S.warm) == (70, 45)
 
 
@@ -51,3 +51,18 @@ def test_primary_tie_follows_sop_table_order():
 
 def test_no_signals_no_primary():
     assert primary_flag(set(), S) is None
+
+
+def test_negative_signal_subtracts_30_after_positives_and_bonus():
+    assert lead_score(B1, NICHE, S, negatives=("inactive_listing",)) == 45
+    assert lead_score(B1, NICHE, S, negatives=()) == 75
+
+
+def test_negative_score_floors_at_zero():
+    assert lead_score({"rank_gap", "competitor_gap"}, "Roofing", S) == 15
+    assert lead_score({"new_business"}, "Roofing", S, negatives=("inactive_listing",)) == 0
+    assert lead_score(set(), "Roofing", S, negatives=("inactive_listing",)) == 0
+
+
+def test_negatives_never_change_the_primary_flag():
+    assert primary_flag({"rank_gap"}, S) == "rank_gap"

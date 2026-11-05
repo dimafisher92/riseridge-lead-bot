@@ -7,6 +7,7 @@ import os
 import pytest
 
 from leadbot.bot.collect import Deps, collect_city
+from leadbot.bot.candidates import to_payload
 from leadbot.bot.dnc import DncList
 from leadbot.bot.scrape import ScrapeError, read_results
 from leadbot.bot.score import load_scoring
@@ -56,16 +57,21 @@ def test_drops_closed_and_phoneless(tmp_path):
     assert set(cands) == {"fx-lakeview", "fx-brightpath", "fx-cedar", "fx-sunrise"}
 
 
-def test_unclaimed_new_unranked_listing_is_hot(tmp_path):
+def test_unclaimed_new_unranked_listing_is_warm(tmp_path):
     _, cands, _ = run(tmp_path)
     c = cands["fx-brightpath"]
-    assert c["signals"] == ["gbp_unverified_or_suspended", "broken_website", "new_business",
-                            "rank_gap", "competitor_gap"]
-    assert (c["lead_score"], c["lead_tier"], c["primary_signal"]) == (75, "Hot", "GBP Suspended")
+    # Not in the money results: rank_gap and competitor_gap are UNKNOWN now (were TRUE).
+    assert c["signals"] == ["gbp_unverified_or_suspended", "broken_website", "new_business"]
+    assert (c["lead_score"], c["lead_tier"], c["primary_signal"]) == (60, "Warm", "GBP Suspended")
+    assert c["negatives"] == []
+    assert c["notes"] == {"rank_gap": "not in the top 3 on Maps for 'therapist austin'",
+                          "competitor_gap": "not in the results for 'therapist austin'"}
+    assert "rank_gap" not in c["evidence"] and "competitor_gap" not in c["evidence"]
     assert c["gbp_status"] == "Unverified"
     assert c["current_rank"] is None
     assert c["money_keyword"] == "therapist austin"
-    assert c["unknown"] == ["google_ads_spend", "meta_ads_active", "technical_debt"]
+    assert c["unknown"] == ["google_ads_spend", "meta_ads_active", "rank_gap", "technical_debt",
+                            "competitor_gap"]
     assert c["bot_run_id"].startswith(RUN_ID + "-")
     assert c["audit_summary"] == "" and c["call_opener"] == ""
 
@@ -81,8 +87,8 @@ def test_established_listing_is_cold_without_primary(tmp_path):
 def test_report_counts(tmp_path):
     report, _, _ = run(tmp_path)
     assert report["status"] == "ok" and report["scraped"] == 6
-    assert report["tiers"] == {"Cold": 3, "Hot": 1}
-    assert report["needs_text"] == 2  # Bright Path (Hot) and Cedar (Cold with an email)
+    assert report["tiers"] == {"Cold": 3, "Warm": 1}
+    assert report["needs_text"] == 2  # Bright Path (Warm) and Cedar (Cold with an email)
     assert report["dnc_checked"] is False
     assert report["dropped"] == {"closed": 1, "no_phone": 1}
     assert json.loads((tmp_path / "report.json").read_text(encoding="utf-8")) == report
@@ -307,3 +313,41 @@ def test_foreign_site_email_falls_back_to_maps_email(tmp_path):
     deps.site_check = lambda url: dataclasses.replace(sites(url), email="studio@webdesign.example.net")
     _, cands, _ = run(tmp_path, deps=deps)
     assert cands["fx-cedar2"]["email"] == "owner@cedar2.example.org"
+
+
+def test_inactive_listing_is_a_negative_that_lowers_the_score(tmp_path):
+    def twin(place_id, name, phone, newest):
+        return dataclasses.replace(PLACES["fx-brightpath"], place_id=place_id, name=name, phone=phone,
+                                   website=None, owner_claimed=False, review_count=50,
+                                   review_dates=(newest,), email=None)
+    active = twin("fx-active", "Active Practice (fictional)", "+15125550150", TODAY - dt.timedelta(days=30))
+    stale = twin("fx-stale", "Stale Practice (fictional)", "+15125550151", TODAY - dt.timedelta(days=731))
+    _, cands, _ = run(tmp_path, deps=with_extra(active, stale))
+    assert cands["fx-active"]["negatives"] == []
+    assert cands["fx-stale"]["negatives"] == ["inactive_listing"]
+    assert cands["fx-stale"]["evidence"]["inactive_listing"] == \
+        f"newest visible review {(TODAY - dt.timedelta(days=731)).isoformat()}, over 2 years ago"
+    assert cands["fx-stale"]["lead_score"] == cands["fx-active"]["lead_score"] - 30
+    assert cands["fx-stale"]["signals"] == cands["fx-active"]["signals"]  # negatives stay out of flags
+    assert "inactive_listing" not in cands["fx-active"]["evidence"]
+
+
+def test_payload_never_carries_negatives_or_notes(tmp_path):
+    _, cands, _ = run(tmp_path)
+    for record in cands.values():
+        payload = to_payload(record)
+        assert "negatives" not in payload and "notes" not in payload
+
+
+def test_chain_listings_are_not_rivals(tmp_path):
+    chain_a = dataclasses.replace(PLACES["fx-sunrise"], place_id="fx-chain-a", phone="+15125550160",
+                                  name="Mega Therapy - Austin", review_count=2000)
+    chain_b = dataclasses.replace(chain_a, place_id="fx-chain-b", phone="+15125550161",
+                                  name="Mega Therapy - Round Rock")
+    deps = make_deps()
+    money = [chain_a, chain_b, PLACES["fx-lakeview"], PLACES["fx-cedar"], PLACES["fx-brightpath"]]
+    everything = list(PLACES.values()) + [chain_a, chain_b]
+    deps.scrape = lambda queries, name: money if name == "money" else everything
+    _, cands, _ = run(tmp_path, deps=deps)
+    # Bright Path is 5th; rivals are Lakeview (412) and Cedar (9), not the 2000-review chain.
+    assert cands["fx-brightpath"]["evidence"]["competitor_gap"].startswith("top 3 for 'therapist austin' average 210 ")
