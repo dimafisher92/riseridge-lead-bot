@@ -7,9 +7,8 @@ from leadbot.bot.score import SIGNAL_ORDER
 from leadbot.bot.signals import TRUE, UNKNOWN
 
 EXTRA_KEYS = ("evidence", "unknown", "place_id")
-# Claude may only fill the two text fields; everything here must come back unchanged.
-LOCKED_KEYS = ("business_name", "phone", "niche", "signals", "primary_signal", "lead_score",
-               "lead_tier", "bot_run_id")
+# Claude may only fill these two text fields; every other candidate field must come back unchanged.
+TEXT_FIELDS = ("audit_summary", "call_opener")
 MAX_SUMMARY_LINES = 3
 MAX_SUMMARY_CHARS = 400
 MAX_OPENER_WORDS = 30
@@ -57,9 +56,14 @@ def to_payload(record):
 
 def check_qualified(qualified, candidate):
     run_id = candidate["bot_run_id"]
-    for key in LOCKED_KEYS:
-        if qualified.get(key) != candidate.get(key):
+    for key in candidate:
+        if key in TEXT_FIELDS:
+            continue
+        if qualified.get(key) != candidate[key]:
             raise QualifiedError(f"{run_id}: {key} changed")
+    for key in qualified:
+        if key not in candidate:
+            raise QualifiedError(f"{run_id}: unexpected field {key}")
     summary = (qualified.get("audit_summary") or "").strip()
     if not summary:
         raise QualifiedError(f"{run_id}: audit_summary is empty")

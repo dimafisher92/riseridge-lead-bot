@@ -38,7 +38,20 @@ def test_valid_qualified_passes():
     ({"signals": []}, "signals"), ({"phone": "+15125550199"}, "phone"),
     ({"audit_summary": ""}, "audit_summary"), ({"call_opener": " "}, "call_opener"),
     ({"audit_summary": "a\nb\nc\nd"}, "audit_summary"),
-    ({"call_opener": " ".join(["word"] * 31)}, "call_opener")])
+    ({"call_opener": " ".join(["word"] * 31)}, "call_opener"),
+    ({"email": "other@x.example.com"}, "email"), ({"website": "https://evil.example.com/"}, "website")])
 def test_invalid_qualified_rejected(over, needle):
     with pytest.raises(QualifiedError, match=needle):
         check_qualified(filled(**over), BASE)
+
+
+def test_changed_website_rejected_when_candidate_has_one():
+    candidate = dict(BASE, website="https://brightpath.example.com/")
+    qualified = filled(website="https://evil.example.com/")
+    with pytest.raises(QualifiedError, match="website changed"):
+        check_qualified(qualified, candidate)
+
+
+def test_added_field_rejected():
+    with pytest.raises(QualifiedError, match="unexpected field note"):
+        check_qualified(filled(note="x"), BASE)
