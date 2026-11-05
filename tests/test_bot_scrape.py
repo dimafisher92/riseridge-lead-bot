@@ -1,4 +1,5 @@
 import datetime as dt
+import json
 import os
 import shutil
 import subprocess
@@ -86,3 +87,46 @@ def test_run_scraper_nonzero_exit_raises(tmp_path):
     with pytest.raises(ScrapeError):
         run_scraper(["q"], str(tmp_path), "money", exe="gmaps.exe", depth=1,
                     runner=FakeRunner(returncode=1))
+
+
+def fixture_lines():
+    with open(FIXTURE, encoding="utf-8") as fh:
+        return fh.read().splitlines()
+
+
+def test_truncated_last_line_is_skipped(tmp_path):
+    path = tmp_path / "r.jsonl"
+    lines = fixture_lines()
+    path.write_text("\n".join(lines[:2]) + '\n{"title": "Cut', encoding="utf-8")
+    places = read_results(str(path))
+    assert [p.place_id for p in places] == ["fx-lakeview", "fx-brightpath"]
+
+
+def test_malformed_middle_line_raises(tmp_path):
+    path = tmp_path / "r.jsonl"
+    lines = fixture_lines()
+    path.write_text(lines[0] + "\n{bad json\n" + lines[1] + "\n", encoding="utf-8")
+    with pytest.raises(json.JSONDecodeError):
+        read_results(str(path))
+
+
+class TimeoutRunner:
+    def __call__(self, args, stdout, stderr, timeout):
+        raise subprocess.TimeoutExpired(args, timeout)
+
+
+def test_run_scraper_timeout_raises_scrape_error(tmp_path):
+    with pytest.raises(ScrapeError, match="timed out"):
+        run_scraper(["q"], str(tmp_path), "money", exe="gmaps.exe", depth=1,
+                    runner=TimeoutRunner(), timeout=60)
+
+
+def test_run_scraper_clears_stale_results(tmp_path):
+    lines = fixture_lines()
+    (tmp_path / "money.raw.jsonl").write_text(lines[0] + "\n", encoding="utf-8")
+
+    def silent_runner(args, stdout, stderr, timeout):
+        return subprocess.CompletedProcess(args, 0)
+
+    assert run_scraper(["q"], str(tmp_path), "money", exe="gmaps.exe", depth=1,
+                       runner=silent_runner) == []

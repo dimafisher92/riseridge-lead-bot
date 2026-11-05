@@ -91,13 +91,18 @@ def read_results(path):
     if not os.path.exists(path):
         return places
     with open(path, encoding="utf-8") as fh:
-        for line in fh:
-            line = line.strip()
-            if not line:
-                continue
-            place = parse_row(json.loads(line))
-            if place.place_id and place.name:
-                places.append(place)
+        lines = [line.strip() for line in fh if line.strip()]
+    for i, line in enumerate(lines):
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            # A killed run can leave a truncated last line; corruption earlier is an error.
+            if i == len(lines) - 1:
+                break
+            raise
+        place = parse_row(row)
+        if place.place_id and place.name:
+            places.append(place)
     return places
 
 
@@ -108,10 +113,15 @@ def run_scraper(queries, out_dir, name, *, exe, depth, runner=subprocess.run, ti
     log = os.path.join(out_dir, f"{name}.scraper.log")
     with open(query_file, "w", encoding="utf-8") as fh:
         fh.write("\n".join(queries) + "\n")
+    if os.path.exists(results):
+        os.remove(results)
     args = [exe, "-input", query_file, "-results", results, "-json", "-depth", str(depth),
             "-c", "1", "-lang", "en", "-exit-on-inactivity", "3m"]
     with open(log, "w", encoding="utf-8") as fh:
-        proc = runner(args, stdout=fh, stderr=subprocess.STDOUT, timeout=timeout)
+        try:
+            proc = runner(args, stdout=fh, stderr=subprocess.STDOUT, timeout=timeout)
+        except subprocess.TimeoutExpired as exc:
+            raise ScrapeError(f"scraper timed out after {timeout}s; see {log}") from exc
     if proc.returncode != 0:
         raise ScrapeError(f"scraper exited {proc.returncode}; see {log}")
     return read_results(results)
