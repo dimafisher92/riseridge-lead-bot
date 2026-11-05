@@ -60,16 +60,21 @@ def cmd_collect(args):
             raise SystemExit(f"DNC files in state/dnc/ are {age} days old (oldest "
                              f"{dnc.oldest_file_date.isoformat()}); the limit is {DNC_MAX_AGE_DAYS}. "
                              "Download fresh FTC files, or use --no-dnc for a dry run.")
-    client = client_from_env()  # also loads .env, which holds GMAPS_SCRAPER_EXE
     run_id = run_id_for(today, plan.niche, plan.city)
     run_dir = os.path.join(RUNS_DIR, run_id)
-    seen = SeenStore(SEEN_PATH)
     try:
-        report = collect_city(plan, seeds, load_scoring(), load_schema(),
-                              _real_deps(run_dir, seeds.depth, client), run_id=run_id,
-                              run_dir=run_dir, today=today, dnc=dnc, seen=seen)
-    finally:
-        seen.close()
+        client = client_from_env()  # also loads .env, which holds GMAPS_SCRAPER_EXE
+        deps = _real_deps(run_dir, seeds.depth, client)
+        seen = SeenStore(SEEN_PATH)
+        try:
+            report = collect_city(plan, seeds, load_scoring(), load_schema(), deps,
+                                  run_id=run_id, run_dir=run_dir, today=today, dnc=dnc, seen=seen)
+        finally:
+            seen.close()
+    except GHLAuthError as exc:
+        print(f"Collect stopped: GoHighLevel rejected the token (HTTP {exc.status}); "
+              "the GHL token needs attention.")
+        return 3
     print(json.dumps(report, indent=2))
     return 0 if report["status"] == "ok" else 2
 
@@ -114,10 +119,14 @@ def cmd_push(args):
         dnc = load_dnc()  # defence in depth: re-check every lead against the DNC files
         dnc_areas = dnc.area_codes
         client = client_from_env()
-        ctx = load_context(client, schema)
 
     results = []
     auth_error = None  # set once a GHL auth error stops the batch (spec 5)
+    if live:
+        try:
+            ctx = load_context(client, schema)
+        except GHLAuthError as exc:
+            auth_error = f"GHL auth error: {exc}"  # nothing is pushed; every line is aborted
     for q in cand.read_jsonl(args.file):
         if auth_error:
             results.append({"bot_run_id": q.get("bot_run_id"), "outcome": "aborted",
@@ -147,6 +156,10 @@ def cmd_push(args):
                 auth_error = f"GHL auth error: {exc}"
                 results.append({"bot_run_id": c["bot_run_id"], "outcome": "aborted",
                                 "message": auth_error})
+                continue
+            except OSError as exc:  # network trouble (URLError, timeouts) fails this lead only
+                results.append({"bot_run_id": c["bot_run_id"], "outcome": "failed",
+                                "message": f"network error: {exc}"})
                 continue
             results.append({"bot_run_id": c["bot_run_id"], "outcome": r.outcome, "message": r.message,
                             "contact_id": r.contact_id, "opportunity_id": r.opportunity_id})

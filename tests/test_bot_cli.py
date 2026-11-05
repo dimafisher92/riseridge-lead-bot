@@ -220,3 +220,57 @@ def test_live_push_rejects_dnc_listed_and_unloaded_area(tmp_path, monkeypatch):
     assert outcome[dallas["bot_run_id"]] == ("rejected", "dnc_area_not_loaded")
     assert results[ok["bot_run_id"]]["outcome"] == "created"
     assert pushed == [ok["bot_run_id"]]
+
+
+def test_auth_error_loading_context_aborts_every_line(tmp_path, monkeypatch):
+    live_env(monkeypatch, tmp_path)
+
+    def no_context(client, schema):
+        raise GHLAuthError(401, "token revoked")
+
+    monkeypatch.setattr(cli, "load_context", no_context)
+    monkeypatch.setattr(cli, "push_lead", lambda *a, **k: pytest.fail("pushed after auth error"))
+    cands = [candidate(n, phone=f"+151255501{n:02d}") for n in (1, 2)]
+    run_dir = write_run(tmp_path, cands, [qualified(c) for c in cands])
+    assert push(run_dir) == 3
+    assert report_of(run_dir, "push_report.json")["counts"] == {"aborted": 2}
+
+
+def test_network_error_fails_one_lead_and_continues(tmp_path, monkeypatch):
+    live_env(monkeypatch, tmp_path)
+    cands = [candidate(n, phone=f"+151255501{n:02d}") for n in (1, 2, 3)]
+    run_dir = write_run(tmp_path, cands, [qualified(c) for c in cands])
+    real_push_lead = cli.push_lead
+
+    def flaky(client, schema, ctx, payload, **kw):
+        if payload["bot_run_id"].endswith("-0002"):
+            raise TimeoutError("timed out")
+        return real_push_lead(client, schema, ctx, payload, **kw)
+
+    monkeypatch.setattr(cli, "push_lead", flaky)
+    assert push(run_dir) == 1
+    results = report_of(run_dir, "push_report.json")["results"]
+    assert [r["outcome"] for r in results] == ["created", "failed", "created"]
+    assert "timed out" in results[1]["message"]
+
+
+def test_collect_auth_error_exits_3(tmp_path, monkeypatch, capsys):
+    from leadbot.bot.collect import Deps
+    from leadbot.bot.scrape import read_results
+    from tests.test_bot_collect import FIXTURE
+
+    def find_contact(phone, email):
+        raise GHLAuthError(401, "token revoked")
+
+    places = read_results(FIXTURE)
+    monkeypatch.setattr(cli, "load_dnc", lambda: FRESH_DNC)
+    monkeypatch.setattr(cli, "client_from_env", lambda: object())
+    monkeypatch.setattr(cli, "_real_deps", lambda run_dir, depth, client: Deps(
+        scrape=lambda queries, name: places, site_check=lambda url: None,
+        pagespeed=lambda url: None, domain_age=lambda url: None, find_contact=find_contact))
+    monkeypatch.setattr(cli, "RUNS_DIR", str(tmp_path / "runs"))
+    monkeypatch.setattr(cli, "SEEN_PATH", str(tmp_path / "seen.sqlite"))
+    assert cli.main(["collect", "--niche", "Counselors / therapists", "--city", "Austin, TX",
+                     "--today", "2026-11-06"]) == 3
+    out = capsys.readouterr().out
+    assert "GHL" in out and len(out.strip().splitlines()) == 1
