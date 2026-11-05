@@ -40,7 +40,7 @@ def _real_deps(run_dir, depth, client):
         site_check=site_check.check_site,
         pagespeed=pagespeed.mobile_score,
         domain_age=domain_age.registration_date,
-        find_contact=client.find_duplicate, get_contact=client.get_contact)
+        find_contact=client.find_duplicate)
 
 
 def _check_dnc_age(dnc):
@@ -91,14 +91,15 @@ UNSEEN_DROPS = ("over_nightly_cap", "ghl_lookup_failed", "dnc_area_not_loaded")
 
 
 def _mark_seen(run_dir, candidates, outcomes, today):
-    """Mark only leads the bot has handled: pushed (or deduped) ones, and Cold leads
-    without an email, which are never pushed by design."""
+    """Mark leads the bot has handled: pushed (or deduped) ones, and Cold leads without an
+    email, which are never pushed by design. A failed push is recorded as "failed": it is
+    not "recently seen" and a later collect may retry it even though its contact exists."""
     store = SeenStore(SEEN_PATH)
     try:
         for c in candidates.values():
             outcome = outcomes.get(c["bot_run_id"])
-            if outcome in HANDLED_OUTCOMES:
-                store.mark(c["place_id"], today, outcome)
+            if outcome in HANDLED_OUTCOMES or outcome == "failed":
+                store.mark(c["place_id"], today, outcome)  # "failed" = retry record
             elif outcome is None and not cand.needs_text(c):
                 store.mark(c["place_id"], today, "cold_no_email")
         for d in cand.read_jsonl(os.path.join(run_dir, "dropped.jsonl")):

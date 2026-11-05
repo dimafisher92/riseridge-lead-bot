@@ -34,8 +34,7 @@ def make_deps(contacts=()):
     return Deps(scrape=lambda queries, name: MONEY if name == "money" else list(PLACES.values()),
                 site_check=sites, pagespeed=lambda url: 35,
                 domain_age=lambda url: dt.date(2015, 1, 1),
-                find_contact=lambda phone, email: {"id": "c1"} if phone in contacts else None,
-                get_contact=lambda contact_id: {"id": contact_id, "tags": ["client"]})
+                find_contact=lambda phone, email: {"id": "c1"} if phone in contacts else None)
 
 
 def run(tmp_path, seeds=None, deps=None, **kw):
@@ -196,36 +195,27 @@ def test_failed_ghl_lookup_drops_only_that_place(tmp_path, error):
     assert set(cands) == {"fx-lakeview", "fx-brightpath", "fx-cedar"}
 
 
-def test_existing_bot_lead_contact_is_kept_as_candidate(tmp_path):
-    deps = make_deps(contacts=("+15125550136",))
-    deps.get_contact = lambda contact_id: {"id": contact_id, "tags": ["bot-lead", "tier-warm"]}
-    _, cands, dropped = run(tmp_path, deps=deps)
+def test_existing_contact_is_kept_only_when_its_last_push_failed(tmp_path):
+    seen = SeenStore(":memory:")
+    seen.mark("fx-sunrise", TODAY - dt.timedelta(days=1), "failed")
+    _, cands, dropped = run(tmp_path, deps=make_deps(contacts=("+15125550136",)), seen=seen)
+    seen.close()
     assert "fx-sunrise" in cands and "fx-sunrise" not in dropped
 
 
-def test_existing_contact_without_bot_lead_tag_is_dropped(tmp_path):
-    deps = make_deps(contacts=("+15125550136",))
-    deps.get_contact = lambda contact_id: {"id": contact_id, "tags": ["tier-warm"]}
-    _, cands, dropped = run(tmp_path, deps=deps)
+@pytest.mark.parametrize("outcome", ["created", "existing", "duplicate", None])
+def test_existing_contact_with_other_or_no_record_is_dropped(tmp_path, outcome):
+    seen = SeenStore(":memory:")
+    if outcome:
+        seen.mark("fx-sunrise", TODAY - dt.timedelta(days=40), outcome)
+    _, cands, dropped = run(tmp_path, deps=make_deps(contacts=("+15125550136",)), seen=seen)
+    seen.close()
     assert dropped["fx-sunrise"] == "ghl_contact" and "fx-sunrise" not in cands
 
 
-def test_contact_that_cannot_be_read_is_dropped_as_lookup_failed(tmp_path):
-    def get_contact(contact_id):
-        raise GHLError(500, "server")
-    deps = make_deps(contacts=("+15125550136",))
-    deps.get_contact = get_contact
-    _, cands, dropped = run(tmp_path, deps=deps)
-    assert dropped["fx-sunrise"] == "ghl_lookup_failed" and "fx-sunrise" not in cands
-
-
-def test_contact_read_auth_error_stops_the_city(tmp_path):
-    def get_contact(contact_id):
-        raise GHLAuthError(401, "token revoked")
-    deps = make_deps(contacts=("+15125550136",))
-    deps.get_contact = get_contact
-    with pytest.raises(GHLAuthError):
-        run(tmp_path, deps=deps)
+def test_existing_contact_without_a_seen_store_is_dropped(tmp_path):
+    _, cands, dropped = run(tmp_path, deps=make_deps(contacts=("+15125550136",)))
+    assert dropped["fx-sunrise"] == "ghl_contact"
 
 
 def test_ghl_auth_error_stops_the_city(tmp_path):

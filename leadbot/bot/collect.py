@@ -22,7 +22,6 @@ class Deps:
     pagespeed: object     # url -> int | None
     domain_age: object    # url -> date | None
     find_contact: object  # (phone, email) -> dict | None
-    get_contact: object   # contact_id -> dict | None (tags of our own earlier leads)
 
 
 def _merge(*lists):
@@ -33,11 +32,6 @@ def _merge(*lists):
                 seen.add(place.place_id)
                 out.append(place)
     return out
-
-
-def _is_bot_lead(contact):
-    tags = (contact or {}).get("tags")
-    return isinstance(tags, list) and "bot-lead" in tags
 
 
 def _drop_reason(place, deps, *, dnc, dnc_areas, seen, seen_days, today):
@@ -54,9 +48,9 @@ def _drop_reason(place, deps, *, dnc, dnc_areas, seen, seen_days, today):
     try:
         found = (deps.find_contact(place.phone, None)
                  or (place.email and deps.find_contact(None, place.email)))
-        # Our own earlier lead (its deal may never have been created) is not dropped:
-        # part A's push_lead creates the missing deal or reports existing/duplicate.
-        if found and not _is_bot_lead(deps.get_contact(found["id"])):
+        # Retry only our own failed pushes (the contact may exist without its deal); the
+        # seen store's "failed" record is the only signal, so old bot leads are never re-pushed.
+        if found and not (seen is not None and seen.last_outcome(place.place_id) == "failed"):
             return "ghl_contact"
     except GHLAuthError:
         raise  # a token problem fails every lookup: stop the run

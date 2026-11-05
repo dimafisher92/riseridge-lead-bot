@@ -1,5 +1,6 @@
 """Candidate and qualified records (spec 3.7, 3.8)."""
 
+import codecs
 import json
 import os
 
@@ -110,15 +111,18 @@ def read_jsonl(path):
 
 def read_jsonl_lenient(path):
     """Yield (line number, record) for each non-blank line; record is None when the line is
-    not valid JSON or not a JSON object. Used for qualified.jsonl, which Claude writes."""
+    not valid JSON, not valid UTF-8 or not a JSON object. Used for qualified.jsonl, which
+    Claude writes, so one bad line never loses the others."""
     if not os.path.exists(path):
         return
-    with open(path, encoding="utf-8") as fh:
-        for n, line in enumerate(fh, 1):
-            if not line.strip():
+    with open(path, "rb") as fh:
+        for n, raw in enumerate(fh, 1):
+            if n == 1:
+                raw = raw.removeprefix(codecs.BOM_UTF8)
+            if not raw.strip():
                 continue
             try:
-                record = json.loads(line)
-            except ValueError:
+                record = json.loads(raw.decode("utf-8"))
+            except ValueError:  # JSONDecodeError and UnicodeDecodeError
                 record = None
             yield n, record if isinstance(record, dict) else None

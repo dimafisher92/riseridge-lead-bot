@@ -63,3 +63,16 @@ def test_area_code_of_a_phone():
     assert area_code("+15125550102") == "512"
     assert area_code("(737) 555-0101") == "737"
     assert area_code(None) is None and area_code("555-0101") is None
+
+
+def test_failed_row_is_retried_and_a_later_mark_overwrites_it():
+    store = SeenStore(":memory:")
+    today = dt.date(2026, 11, 6)
+    store.mark("p1", today, "failed")
+    assert not store.recently_seen("p1", today, 30)
+    assert store.last_outcome("p1") == "failed"
+    assert store.last_outcome("nope") is None
+    store.mark("p1", today, "created")
+    assert store.recently_seen("p1", today, 30)
+    assert store.last_outcome("p1") == "created"
+    store.close()

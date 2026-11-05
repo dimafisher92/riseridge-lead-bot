@@ -314,8 +314,7 @@ def test_collect_auth_error_exits_3(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(cli, "client_from_env", lambda: object())
     monkeypatch.setattr(cli, "_real_deps", lambda run_dir, depth, client: Deps(
         scrape=lambda queries, name: places, site_check=lambda url: None,
-        pagespeed=lambda url: None, domain_age=lambda url: None, find_contact=find_contact,
-        get_contact=lambda contact_id: None))
+        pagespeed=lambda url: None, domain_age=lambda url: None, find_contact=find_contact))
     monkeypatch.setattr(cli, "RUNS_DIR", str(tmp_path / "runs"))
     monkeypatch.setattr(cli, "SEEN_PATH", str(tmp_path / "seen.sqlite"))
     assert cli.main(["collect", "--niche", "Counselors / therapists", "--city", "Austin, TX",
@@ -369,6 +368,12 @@ def test_unexpected_error_fails_one_lead_and_continues(tmp_path, monkeypatch):
     results = report_of(run_dir, "push_report.json")["results"]
     assert [r["outcome"] for r in results] == ["failed", "created", "created"]
     assert results[0]["message"].startswith("KeyError")
+    store = SeenStore(str(tmp_path / "seen.sqlite"))
+    try:
+        assert store.last_outcome("fx-1") == "failed"
+        assert store.last_outcome("fx-2") == "created"
+    finally:
+        store.close()
 
 
 def test_malformed_qualified_line_is_rejected_and_the_rest_processed(tmp_path):
@@ -409,3 +414,68 @@ def test_dnc_area_not_loaded_drop_is_not_marked_seen(tmp_path, monkeypatch):
         assert store.recently_seen("fx-dnc", dt.date.today(), 30)
     finally:
         store.close()
+
+
+def test_failed_push_is_retried_next_night_end_to_end(tmp_path, monkeypatch):
+    from leadbot.bot.collect import Deps, collect_city
+    from leadbot.bot.scrape import read_results
+    from leadbot.bot.seeds import city_plan
+    from leadbot.bot.score import load_scoring
+    from tests.test_bot_collect import FIXTURE, RUN_ID as COLLECT_RUN
+    client, seen_path = live_env(monkeypatch, tmp_path)
+    sunrise = next(p for p in read_results(FIXTURE) if p.place_id == "fx-sunrise")
+    c = candidate(1, phone=sunrise.phone, place_id="fx-sunrise")
+    run_dir = write_run(tmp_path, [c], [qualified(c)])
+
+    def boom(body):
+        raise KeyError("opportunity")
+
+    monkeypatch.setattr(client, "create_opportunity", boom)
+    assert push(run_dir) == 1
+    assert len(client.contacts) == 1 and not client.opportunities  # contact without a deal
+    monkeypatch.undo()
+    live_env(monkeypatch, tmp_path)  # undo also dropped the cli patches; client is a new fake
+    monkeypatch.setattr(cli, "client_from_env", lambda: client)
+
+    seeds = load_seeds()
+    plan = city_plan(seeds, "Counselors / therapists", "Austin, TX")
+    deps = Deps(scrape=lambda queries, name: [sunrise], site_check=lambda url: None,
+                pagespeed=lambda url: None, domain_age=lambda url: None,
+                find_contact=lambda phone, email: next(
+                    (x for x in client.contacts.values() if x.get("phone") == phone), None))
+    seen = SeenStore(seen_path)
+    try:
+        report = collect_city(plan, seeds, load_scoring(), load_schema(), deps, run_id="2026-11-07-x",
+                              run_dir=str(tmp_path / "run2"), today=dt.date.today(), seen=seen)
+    finally:
+        seen.close()
+    assert report["dropped"] == {} and report["scraped"] == 1
+    rows = [json.loads(x) for x in (tmp_path / "run2" / "candidates.jsonl").read_text(
+        encoding="utf-8").splitlines()]
+    assert [r["place_id"] for r in rows] == ["fx-sunrise"]
+    retry = dict(rows[0], lead_tier="Warm")  # eligible for text, as a lead with signals would be
+    cand_path = tmp_path / "run2" / "candidates.jsonl"
+    cand_path.write_text(json.dumps(retry) + chr(10), encoding="utf-8")
+    (tmp_path / "run2" / "qualified.jsonl").write_text(
+        json.dumps(qualified(retry)) + chr(10), encoding="utf-8")
+    (tmp_path / "run2" / "report.json").write_text(
+        json.dumps({"run_id": "2026-11-07-x", "dnc_checked": True}), encoding="utf-8")
+    assert cli.main(["push", str(tmp_path / "run2" / "qualified.jsonl")]) == 0
+    assert len(client.opportunities) == 1 and len(client.contacts) == 1
+    store = SeenStore(seen_path)
+    try:
+        assert store.last_outcome("fx-sunrise") in ("created", "updated")
+    finally:
+        store.close()
+
+
+def test_qualified_file_with_a_bad_byte_rejects_only_that_line(tmp_path):
+    c = candidate()
+    run_dir = write_run(tmp_path, [c], [])
+    nl, bom, bad = bytes([10]), bytes([0xEF, 0xBB, 0xBF]), bytes([0xFF])
+    (run_dir / "qualified.jsonl").write_bytes(
+        bom + json.dumps(qualified(c)).encode() + nl + b'{"x": "' + bad + b'"}' + nl)
+    assert push(run_dir, "--dry-run") == 1
+    results = report_of(run_dir, "dry_run_report.json")["results"]
+    assert [(r["outcome"], r["message"]) for r in results] == [
+        ("would_push", ""), ("rejected", "malformed line 2")]
