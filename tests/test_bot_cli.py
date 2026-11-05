@@ -314,7 +314,8 @@ def test_collect_auth_error_exits_3(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(cli, "client_from_env", lambda: object())
     monkeypatch.setattr(cli, "_real_deps", lambda run_dir, depth, client: Deps(
         scrape=lambda queries, name: places, site_check=lambda url: None,
-        pagespeed=lambda url: None, domain_age=lambda url: None, find_contact=find_contact))
+        pagespeed=lambda url: None, domain_age=lambda url: None, find_contact=find_contact,
+        get_contact=lambda contact_id: None))
     monkeypatch.setattr(cli, "RUNS_DIR", str(tmp_path / "runs"))
     monkeypatch.setattr(cli, "SEEN_PATH", str(tmp_path / "seen.sqlite"))
     assert cli.main(["collect", "--niche", "Counselors / therapists", "--city", "Austin, TX",
@@ -350,3 +351,61 @@ def test_seen_falls_back_to_today_without_a_dated_run_id(tmp_path, monkeypatch):
     finally:
         store.close()
     assert days == {"fx-1": dt.date.today().isoformat()}
+
+
+def test_unexpected_error_fails_one_lead_and_continues(tmp_path, monkeypatch):
+    live_env(monkeypatch, tmp_path)
+    cands = [candidate(n, phone=f"+151255501{n:02d}") for n in (1, 2, 3)]
+    run_dir = write_run(tmp_path, cands, [qualified(c) for c in cands])
+    real_push_lead = cli.push_lead
+
+    def flaky(client, schema, ctx, payload, **kw):
+        if payload["bot_run_id"].endswith("-0001"):
+            raise KeyError("opportunities")
+        return real_push_lead(client, schema, ctx, payload, **kw)
+
+    monkeypatch.setattr(cli, "push_lead", flaky)
+    assert push(run_dir) == 1
+    results = report_of(run_dir, "push_report.json")["results"]
+    assert [r["outcome"] for r in results] == ["failed", "created", "created"]
+    assert results[0]["message"].startswith("KeyError")
+
+
+def test_malformed_qualified_line_is_rejected_and_the_rest_processed(tmp_path):
+    c = candidate()
+    run_dir = write_run(tmp_path, [c], [])
+    (run_dir / "qualified.jsonl").write_text(
+        '{"bot_run_id": "oops' + chr(10) + json.dumps(qualified(c)) + chr(10), encoding="utf-8")
+    assert push(run_dir, "--dry-run") == 1
+    results = report_of(run_dir, "dry_run_report.json")["results"]
+    assert [(r["outcome"], r["message"]) for r in results] == [
+        ("rejected", "malformed line 1"), ("would_push", "")]
+
+
+def test_live_push_refuses_stale_dnc_files(tmp_path, monkeypatch):
+    live_env(monkeypatch, tmp_path)
+    stale = DncList({"5125550199", "7375550199"},
+                    oldest_file_date=dt.date.today() - dt.timedelta(days=40))
+    monkeypatch.setattr(cli, "load_dnc", lambda: stale)
+    monkeypatch.setattr(cli, "client_from_env", lambda: pytest.fail("stale DNC reached GHL"))
+    monkeypatch.setattr(cli, "push_lead", lambda *a, **k: pytest.fail("pushed with stale DNC"))
+    c = candidate()
+    run_dir = write_run(tmp_path, [c], [qualified(c)])
+    with pytest.raises(SystemExit, match="40 days old"):
+        push(run_dir)
+    assert not (run_dir / "push_report.json").exists()
+
+
+def test_dnc_area_not_loaded_drop_is_not_marked_seen(tmp_path, monkeypatch):
+    _, seen_path = live_env(monkeypatch, tmp_path)
+    c = candidate()
+    run_dir = write_run(tmp_path, [c], [qualified(c)], dropped=[
+        {"place_id": "fx-dallas", "business_name": "d", "reason": "dnc_area_not_loaded"},
+        {"place_id": "fx-dnc", "business_name": "n", "reason": "dnc"}])
+    assert push(run_dir) == 0
+    store = SeenStore(seen_path)
+    try:
+        assert not store.recently_seen("fx-dallas", dt.date.today(), 30)
+        assert store.recently_seen("fx-dnc", dt.date.today(), 30)
+    finally:
+        store.close()

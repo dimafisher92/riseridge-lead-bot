@@ -106,3 +106,19 @@ def read_jsonl(path):
         return []
     with open(path, encoding="utf-8") as fh:
         return [json.loads(line) for line in fh if line.strip()]
+
+
+def read_jsonl_lenient(path):
+    """Yield (line number, record) for each non-blank line; record is None when the line is
+    not valid JSON or not a JSON object. Used for qualified.jsonl, which Claude writes."""
+    if not os.path.exists(path):
+        return
+    with open(path, encoding="utf-8") as fh:
+        for n, line in enumerate(fh, 1):
+            if not line.strip():
+                continue
+            try:
+                record = json.loads(line)
+            except ValueError:
+                record = None
+            yield n, record if isinstance(record, dict) else None

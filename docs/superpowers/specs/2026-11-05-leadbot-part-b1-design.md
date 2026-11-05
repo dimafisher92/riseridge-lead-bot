@@ -95,7 +95,7 @@ In order, each drop recorded in `dropped.jsonl` with its reason:
 2. No phone (reps call; Cold leads without a phone are not pushed either).
 3. Phone listed in the DNC files (`dnc`), or, right after, its area code has no loaded DNC number (`dnc_area_not_loaded`: fail closed).
 4. place_id seen in the last 30 days.
-5. Already a GHL contact (part A's `find_duplicate` by phone, then email): `ghl_contact`. This is a deliberate conservative choice: part A's `push_lead` marks only existing clients, won deals and recent losses as duplicates and would update any other existing contact, but B1 never re-engages an existing contact. A lookup that fails for any reason other than an auth error drops only that place (`ghl_lookup_failed`, not marked seen); an auth error stops the run.
+5. Already a GHL contact (part A's `find_duplicate` by phone, then email): `ghl_contact`, except our own leads. The contact's tags are read with `get_contact`; a contact tagged `bot-lead` is kept as a candidate (its deal may never have been created because an earlier push died midway), and part A's `push_lead` creates the missing deal, returns `existing` when one is open, or `duplicate` for clients and recent losses. Pushed places are skipped for 30 days by the seen store, so a bot lead is re-admitted only after that window or after a failed push. Any other existing contact is dropped: part A's `push_lead` would update any contact that is not a client, won deal or recent loss, and B1 never re-engages one. A lookup or tag read that fails for any reason other than an auth error drops only that place (`ghl_lookup_failed`, not marked seen); an auth error stops the run.
 
 Then, within the run, a later place with the same phone as a kept one is dropped (`shared_phone`), and at most 150 places per city per night go to enrichment, in Maps result order (`over_nightly_cap` for the rest). After enrichment an email found on more than one candidate is cleared on all of them, and a website `mailto:` on another registrable domain than the website's is ignored.
 
@@ -146,7 +146,7 @@ One Claude Code scheduled task, daily at 02:00 local, prompt: run the `leadbot-n
 
 ## 4. Compliance
 
-- DNC: the user registers for a National Do Not Call Registry Subscription Account Number at the FTC and downloads the area-code files for the target cities into `state/dnc/` (git-ignored). The three cities span about ten area codes (Austin 512, 737; Dallas 214, 469, 972, 945; Houston 713, 281, 832, 346); the first five are free, the rest are paid per area code, so the pilot may start with fewer. `collect` refuses to run for a city whose area codes have no file or when any loaded file is older than 31 days (the FTC scrub list must be no older than 31 days), drops listed numbers and numbers whose area code has no loaded file, and a live `push` checks every lead against the DNC files again. Not legal advice.
+- DNC: the user registers for a National Do Not Call Registry Subscription Account Number at the FTC and downloads the area-code files for the target cities into `state/dnc/` (git-ignored). The three cities span about ten area codes (Austin 512, 737; Dallas 214, 469, 972, 945; Houston 713, 281, 832, 346); the first five are free, the rest are paid per area code, so the pilot may start with fewer. `collect` refuses to run for a city whose area codes have no file or when any loaded file is older than 31 days (the FTC scrub list must be no older than 31 days), drops listed numbers and numbers whose area code has no loaded file, and a live `push` loads the DNC files again, refuses them under the same 31-day age rule, and checks every lead against them. A `dnc_area_not_loaded` drop is not marked seen, so adding that area code's file brings the place back the next night. Not legal advice.
 - No autodialing or SMS (unchanged from part A).
 - Scraping Google Maps directly is against Google's terms of service; the SOP recommends providers. The user chose the open-source scraper with that risk; the bot keeps one worker and small nightly volumes.
 - Only business contact data is stored.
@@ -155,7 +155,8 @@ One Claude Code scheduled task, daily at 02:00 local, prompt: run the `leadbot-n
 
 - Scraper exits non-zero, or every query returns 0 rows: stop the city, write `report.json` with `blocked_or_failed`, push nothing.
 - Per-place enrichment errors become UNKNOWN; never crash the run.
-- Push: part A's rules (auth error stops; other errors skip the lead).
+- Push: part A's rules (an auth error stops the batch with exit 3; any other exception from `push_lead`, not only network errors, fails that lead as `failed` with `<ExceptionType>: <message>` and the batch continues). `push_report.json` is always written and seen marks are always applied; a failed lead is not marked seen.
+- `qualified.jsonl` is read line by line: a line that is not valid JSON or not a JSON object is recorded as `rejected` (`malformed line <n>`) and the other lines are still processed. A malformed `candidates.jsonl` is a collect bug and still stops the push.
 - Every artefact of a run stays in `state/runs/<run_id>/`; re-running `push` on the same file is safe (part A is idempotent).
 
 ## 6. Testing

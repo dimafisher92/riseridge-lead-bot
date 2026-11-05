@@ -40,7 +40,17 @@ def _real_deps(run_dir, depth, client):
         site_check=site_check.check_site,
         pagespeed=pagespeed.mobile_score,
         domain_age=domain_age.registration_date,
-        find_contact=client.find_duplicate)
+        find_contact=client.find_duplicate, get_contact=client.get_contact)
+
+
+def _check_dnc_age(dnc):
+    """Refuse DNC files older than the limit. Age is measured against the real date, not
+    --today (fail closed on re-runs)."""
+    age = (dt.date.today() - dnc.oldest_file_date).days if dnc.oldest_file_date else 0
+    if age > DNC_MAX_AGE_DAYS:
+        raise SystemExit(f"DNC files in state/dnc/ are {age} days old (oldest "
+                         f"{dnc.oldest_file_date.isoformat()}); the limit is {DNC_MAX_AGE_DAYS}. "
+                         "Download fresh FTC files, or use --no-dnc for a dry run.")
 
 
 def cmd_collect(args):
@@ -54,12 +64,7 @@ def cmd_collect(args):
         if missing:
             raise SystemExit(f"No DNC file for area codes {', '.join(missing)} in state/dnc/. "
                              "Add them, or use --no-dnc for a dry run.")
-        # File age is measured against the real date, not --today (fail closed on re-runs).
-        age = (dt.date.today() - dnc.oldest_file_date).days if dnc.oldest_file_date else 0
-        if age > DNC_MAX_AGE_DAYS:
-            raise SystemExit(f"DNC files in state/dnc/ are {age} days old (oldest "
-                             f"{dnc.oldest_file_date.isoformat()}); the limit is {DNC_MAX_AGE_DAYS}. "
-                             "Download fresh FTC files, or use --no-dnc for a dry run.")
+        _check_dnc_age(dnc)
     run_id = run_id_for(today, plan.niche, plan.city)
     run_dir = os.path.join(RUNS_DIR, run_id)
     try:
@@ -80,8 +85,9 @@ def cmd_collect(args):
 
 
 HANDLED_OUTCOMES = ("created", "updated", "duplicate", "existing")
-# Drops that say nothing about the place itself: it is collected again next night.
-UNSEEN_DROPS = ("over_nightly_cap", "ghl_lookup_failed")
+# Drops that say nothing about the place itself: it is collected again next night
+# (a missing DNC area file may be added in the meantime).
+UNSEEN_DROPS = ("over_nightly_cap", "ghl_lookup_failed", "dnc_area_not_loaded")
 
 
 def _mark_seen(run_dir, candidates, outcomes, today):
@@ -125,6 +131,7 @@ def cmd_push(args):
     client = ctx = dnc = dnc_areas = None
     if live:
         dnc = load_dnc()  # defence in depth: re-check every lead against the DNC files
+        _check_dnc_age(dnc)
         dnc_areas = dnc.area_codes
         client = client_from_env()
 
@@ -136,8 +143,12 @@ def cmd_push(args):
         except GHLAuthError as exc:
             auth_error = f"GHL auth error: {exc}"  # nothing is pushed; every line is aborted
     lines_seen = set()
-    for q in cand.read_jsonl(args.file):
-        run_id = q.get("bot_run_id") if isinstance(q, dict) else None
+    for line_no, q in cand.read_jsonl_lenient(args.file):
+        if q is None:
+            results.append({"bot_run_id": None, "outcome": "rejected",
+                            "message": f"malformed line {line_no}"})
+            continue
+        run_id = q.get("bot_run_id")
         run_id = run_id if isinstance(run_id, str) else None
         if auth_error:
             results.append({"bot_run_id": run_id, "outcome": "aborted", "message": auth_error})
@@ -175,9 +186,9 @@ def cmd_push(args):
                 results.append({"bot_run_id": c["bot_run_id"], "outcome": "aborted",
                                 "message": auth_error})
                 continue
-            except OSError as exc:  # network trouble (URLError, timeouts) fails this lead only
+            except Exception as exc:  # noqa: BLE001 - nothing kills a live batch: fail this lead only
                 results.append({"bot_run_id": c["bot_run_id"], "outcome": "failed",
-                                "message": f"network error: {exc}"})
+                                "message": f"{type(exc).__name__}: {exc}"})
                 continue
             results.append({"bot_run_id": c["bot_run_id"], "outcome": r.outcome, "message": r.message,
                             "contact_id": r.contact_id, "opportunity_id": r.opportunity_id})
