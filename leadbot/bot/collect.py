@@ -6,7 +6,7 @@ from collections import Counter
 from dataclasses import dataclass
 
 from leadbot.bot import candidates as cand
-from leadbot.bot.dnc import is_listed
+from leadbot.bot.dnc import area_code, is_listed
 from leadbot.bot.score import lead_score, lead_tier, primary_flag
 from leadbot.bot.scrape import ScrapeError
 from leadbot.bot.signals import Enrichment, detect, gbp_status, rank_info, true_flags
@@ -31,13 +31,15 @@ def _merge(*lists):
     return out
 
 
-def _drop_reason(place, deps, *, dnc, seen, seen_days, today):
+def _drop_reason(place, deps, *, dnc, dnc_areas, seen, seen_days, today):
     if place.closed:
         return "closed"
     if not place.phone:
         return "no_phone"
     if dnc is not None and is_listed(dnc, place.phone):
         return "dnc"
+    if dnc is not None and area_code(place.phone) not in dnc_areas:
+        return "dnc_area_not_loaded"  # fail closed: no list loaded for this number
     if seen is not None and seen.recently_seen(place.place_id, today, seen_days):
         return "seen_recently"
     if deps.find_contact(place.phone, None) or (place.email and deps.find_contact(None, place.email)):
@@ -85,9 +87,11 @@ def collect_city(plan, seeds, scoring, schema, deps, *, run_id, run_dir, today, 
         _write_report(run_dir, report)
         return report
 
+    dnc_areas = dnc.area_codes if dnc is not None else None  # once per city
     kept, dropped = [], []
     for place in places:
-        reason = _drop_reason(place, deps, dnc=dnc, seen=seen, seen_days=seeds.seen_days, today=today)
+        reason = _drop_reason(place, deps, dnc=dnc, dnc_areas=dnc_areas, seen=seen,
+                              seen_days=seeds.seen_days, today=today)
         if reason:
             dropped.append(_drop_row(place, reason))
         else:

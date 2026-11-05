@@ -40,3 +40,26 @@ def test_seen_mark_moves_last_seen(tmp_path):
     reopened = SeenStore(path)
     assert reopened.recently_seen("p1", dt.date(2026, 11, 20), 30)
     reopened.close()
+
+
+def test_dnc_records_oldest_loaded_file_date(tmp_path):
+    import os
+    d = tmp_path / "dnc"
+    d.mkdir()
+    (d / "512.txt").write_text("5125550101\n", encoding="utf-8")
+    (d / "737.csv").write_text("7375550101\n", encoding="utf-8")
+    (d / "notes.md").write_text("old notes\n", encoding="utf-8")
+    stamp = dt.datetime(2026, 10, 1, 12, 0).timestamp()
+    os.utime(d / "737.csv", (stamp, stamp))
+    os.utime(d / "512.txt", (stamp + 5 * 86400, stamp + 5 * 86400))
+    older = dt.datetime(2026, 1, 1, 12, 0).timestamp()
+    os.utime(d / "notes.md", (older, older))  # not a DNC file: ignored
+    assert load_dnc(str(d)).oldest_file_date == dt.date(2026, 10, 1)
+    assert load_dnc(str(tmp_path / "none")).oldest_file_date is None
+
+
+def test_area_code_of_a_phone():
+    from leadbot.bot.dnc import area_code
+    assert area_code("+15125550102") == "512"
+    assert area_code("(737) 555-0101") == "737"
+    assert area_code(None) is None and area_code("555-0101") is None

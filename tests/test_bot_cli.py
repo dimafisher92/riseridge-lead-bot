@@ -5,6 +5,7 @@ import json
 import pytest
 
 from leadbot.bot import cli
+from leadbot.bot.dnc import DncList
 from leadbot.bot.seeds import load_seeds
 from leadbot.bot.seen import SeenStore
 from leadbot.ghl.client import GHLAuthError
@@ -13,6 +14,8 @@ from leadbot.ghl.setup import run_setup
 from tests.fakes import FakeClient
 
 RUN_ID = "2026-11-06-counselors-therapists-austin-tx"
+# Area codes 512 and 737 loaded, none of the test candidates listed.
+FRESH_DNC = DncList({"5125550199", "7375550199"}, oldest_file_date=dt.date.today())
 
 
 def candidate(n=1, **over):
@@ -99,7 +102,7 @@ def test_live_refused_for_no_dnc_run(tmp_path, monkeypatch):
         push(run_dir)
 
 
-def test_live_push_creates_lead_and_marks_seen(tmp_path, monkeypatch):
+def live_env(monkeypatch, tmp_path):
     schema = load_schema()
     client = FakeClient()
     run_setup(client, schema)
@@ -112,6 +115,12 @@ def test_live_push_creates_lead_and_marks_seen(tmp_path, monkeypatch):
     monkeypatch.setattr(cli, "client_from_env", lambda: client)
     monkeypatch.setattr(cli, "load_seeds", lambda: dataclasses.replace(load_seeds(), live=True))
     monkeypatch.setattr(cli, "SEEN_PATH", seen_path)
+    monkeypatch.setattr(cli, "load_dnc", lambda: FRESH_DNC)
+    return client, seen_path
+
+
+def test_live_push_creates_lead_and_marks_seen(tmp_path, monkeypatch):
+    client, seen_path = live_env(monkeypatch, tmp_path)
     c = candidate()
     run_dir = write_run(tmp_path, [c], [qualified(c)], dropped=[
         {"place_id": "fx-closed", "business_name": "x", "reason": "closed"},
@@ -130,22 +139,6 @@ def test_collect_refuses_without_dnc_files(tmp_path, monkeypatch):
     monkeypatch.setattr(cli, "load_dnc", lambda: cli.DncList())
     with pytest.raises(SystemExit, match="512"):
         cli.main(["collect", "--niche", "Counselors / therapists", "--city", "Austin, TX"])
-
-
-def live_env(monkeypatch, tmp_path):
-    schema = load_schema()
-    client = FakeClient()
-    run_setup(client, schema)
-    client.create_pipeline("02. GSM Appointment New Client", ["New client!"])
-    for f in schema.fields:
-        if f.created_by == "ui":
-            client.fields.append({"id": "ui-" + f.name, "name": f.name, "dataType": f.data_type,
-                                  "picklistOptions": list(f.options)})
-    seen_path = str(tmp_path / "seen.sqlite")
-    monkeypatch.setattr(cli, "client_from_env", lambda: client)
-    monkeypatch.setattr(cli, "load_seeds", lambda: dataclasses.replace(load_seeds(), live=True))
-    monkeypatch.setattr(cli, "SEEN_PATH", seen_path)
-    return client, seen_path
 
 
 def test_auth_error_aborts_batch(tmp_path, monkeypatch):
@@ -194,3 +187,33 @@ def test_seen_marks_only_handled_leads(tmp_path, monkeypatch):
         assert outcomes == {"fx-1": "created", "fx-2": "cold_no_email"}
     finally:
         store.close()
+
+
+def test_collect_refuses_stale_dnc_files(tmp_path, monkeypatch):
+    stale = DncList({"5125550199", "7375550199"},
+                    oldest_file_date=dt.date.today() - dt.timedelta(days=40))
+    monkeypatch.setattr(cli, "load_dnc", lambda: stale)
+    monkeypatch.setattr(cli, "client_from_env", lambda: pytest.fail("stale DNC reached GHL"))
+    with pytest.raises(SystemExit, match="40 days old"):
+        cli.main(["collect", "--niche", "Counselors / therapists", "--city", "Austin, TX"])
+
+
+def test_live_push_rejects_dnc_listed_and_unloaded_area(tmp_path, monkeypatch):
+    client, _ = live_env(monkeypatch, tmp_path)
+    listed = candidate(1, phone="+15125550199")
+    dallas = candidate(2, phone="+12145550102")
+    ok = candidate(3, phone="+15125550103")
+    run_dir = write_run(tmp_path, [listed, dallas, ok], [qualified(c) for c in (listed, dallas, ok)])
+    real_push_lead, pushed = cli.push_lead, []
+
+    def spy(client_, schema, ctx, payload, **kw):
+        pushed.append(payload["bot_run_id"])
+        return real_push_lead(client_, schema, ctx, payload, **kw)
+
+    monkeypatch.setattr(cli, "push_lead", spy)
+    assert push(run_dir) == 1
+    results = {r["bot_run_id"]: r for r in report_of(run_dir, "push_report.json")["results"]}
+    assert (results[listed["bot_run_id"]]["outcome"], results[listed["bot_run_id"]]["message"]) ==         ("rejected", "dnc")
+    assert (results[dallas["bot_run_id"]]["outcome"], results[dallas["bot_run_id"]]["message"]) ==         ("rejected", "dnc_area_not_loaded")
+    assert results[ok["bot_run_id"]]["outcome"] == "created"
+    assert pushed == [ok["bot_run_id"]]

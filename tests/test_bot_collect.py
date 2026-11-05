@@ -140,3 +140,30 @@ def test_scraper_failure_is_blocked(tmp_path):
     assert "exited 1" in report["error"]
     assert json.loads((tmp_path / "report.json").read_text(encoding="utf-8"))["status"] == \
         "blocked_or_failed"
+
+
+class CountingDnc(DncList):
+    calls = 0
+
+    @property
+    def area_codes(self):
+        CountingDnc.calls += 1
+        return {n[:3] for n in self.numbers}
+
+
+def test_phone_in_unloaded_area_code_is_dropped(tmp_path):
+    out_of_area = dataclasses.replace(PLACES["fx-brightpath"], place_id="fx-dallas",
+                                      phone="+12145550140")
+    deps = make_deps()
+    deps.scrape = lambda queries, name: MONEY if name == "money" else         list(PLACES.values()) + [out_of_area]
+    CountingDnc.calls = 0
+    report, cands, dropped = run(tmp_path, deps=deps, dnc=CountingDnc({"5125550199"}))
+    assert dropped["fx-dallas"] == "dnc_area_not_loaded"
+    assert "fx-brightpath" in cands
+    assert report["dropped"]["dnc_area_not_loaded"] == 1
+    assert CountingDnc.calls == 1  # loaded area codes computed once per city
+
+
+def test_dnc_listing_wins_over_area_check(tmp_path):
+    _, _, dropped = run(tmp_path, dnc=DncList({"5125550135"}))
+    assert dropped["fx-cedar"] == "dnc"

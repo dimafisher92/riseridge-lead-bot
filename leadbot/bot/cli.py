@@ -9,7 +9,8 @@ from collections import Counter
 from leadbot.bot import candidates as cand
 from leadbot.bot import domain_age, pagespeed, scrape, site_check
 from leadbot.bot.collect import Deps, collect_city
-from leadbot.bot.dnc import DncList, load_dnc, missing_area_codes
+from leadbot.bot.dnc import (DNC_MAX_AGE_DAYS, DncList, area_code, is_listed, load_dnc,
+                             missing_area_codes)
 from leadbot.bot.score import load_scoring
 from leadbot.bot.seeds import city_plan, load_seeds
 from leadbot.bot.seen import SeenStore
@@ -53,6 +54,12 @@ def cmd_collect(args):
         if missing:
             raise SystemExit(f"No DNC file for area codes {', '.join(missing)} in state/dnc/. "
                              "Add them, or use --no-dnc for a dry run.")
+        # File age is measured against the real date, not --today (fail closed on re-runs).
+        age = (dt.date.today() - dnc.oldest_file_date).days if dnc.oldest_file_date else 0
+        if age > DNC_MAX_AGE_DAYS:
+            raise SystemExit(f"DNC files in state/dnc/ are {age} days old (oldest "
+                             f"{dnc.oldest_file_date.isoformat()}); the limit is {DNC_MAX_AGE_DAYS}. "
+                             "Download fresh FTC files, or use --no-dnc for a dry run.")
     client = client_from_env()  # also loads .env, which holds GMAPS_SCRAPER_EXE
     run_id = run_id_for(today, plan.niche, plan.city)
     run_dir = os.path.join(RUNS_DIR, run_id)
@@ -100,8 +107,10 @@ def cmd_push(args):
         if not report.get("dnc_checked"):
             raise SystemExit("this run was collected with --no-dnc; it can only be a --dry-run")
     schema = load_schema()
-    client = ctx = None
+    client = ctx = dnc = dnc_areas = None
     if live:
+        dnc = load_dnc()  # defence in depth: re-check every lead against the DNC files
+        dnc_areas = dnc.area_codes
         client = client_from_env()
         ctx = load_context(client, schema)
 
@@ -124,6 +133,12 @@ def cmd_push(args):
             continue
         payload = cand.to_payload(q)
         if live:
+            blocked = ("dnc" if is_listed(dnc, c["phone"]) else
+                       "dnc_area_not_loaded" if area_code(c["phone"]) not in dnc_areas else None)
+            if blocked:
+                results.append({"bot_run_id": c["bot_run_id"], "outcome": "rejected",
+                                "message": blocked})
+                continue
             try:
                 r = push_lead(client, schema, ctx, payload)
             except GHLAuthError as exc:
