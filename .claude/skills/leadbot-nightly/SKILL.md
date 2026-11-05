@@ -28,7 +28,7 @@ python -m leadbot.bot collect --niche "Counselors / therapists" --city "<city>"
 - Exit 0: continue with that city.
 - Exit 2 (`blocked_or_failed`): note it for the report and skip the city. Do not retry in the same run.
 - Exit 3: GoHighLevel rejected the token. Stop the whole run (do not collect or push any further city) and say in the report that the GHL token needs attention.
-- Stops with "No DNC file for area codes" or "DNC files in state/dnc/ are N days old": if `config/seeds.toml` has `live = false`, rerun the same command once with `--no-dnc`. If `live = true`, skip the city and report the message (missing area codes, or the file age).
+- Stops with "No DNC file for area codes" or "DNC files in state/dnc/ are N days old" (only while `config/seeds.toml` has `dnc_check = true`): if `config/seeds.toml` has `live = false`, rerun the same command once with `--no-dnc`. If `live = true`, skip the city and report the message (missing area codes, or the file age).
 - Stops with "Set GMAPS_SCRAPER_EXE in .env": stop the whole run and report that the scraper path is not configured.
 - Any other non-zero exit or error: note the last line of the error in the report, skip the city, and do not retry.
 

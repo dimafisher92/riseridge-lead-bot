@@ -58,7 +58,7 @@ def cmd_collect(args):
     seeds = load_seeds()
     plan = city_plan(seeds, args.niche, args.city)
     dnc = None
-    if not args.no_dnc:
+    if seeds.dnc_check and not args.no_dnc:  # dnc_check = false: B2B calls, no scrub
         dnc = load_dnc()
         missing = missing_area_codes(dnc, plan.area_codes)
         if missing:
@@ -123,17 +123,21 @@ def cmd_push(args):
         report = json.load(fh)
     candidates = {c["bot_run_id"]: c for c in cand.read_jsonl(os.path.join(run_dir, "candidates.jsonl"))}
     live = not args.dry_run
+    dnc_check = True
     if live:
-        if not load_seeds().live:
+        seeds = load_seeds()
+        if not seeds.live:
             raise SystemExit("config/seeds.toml has live = false; use --dry-run")
-        if not report.get("dnc_checked"):
+        dnc_check = seeds.dnc_check
+        if dnc_check and not report.get("dnc_checked"):
             raise SystemExit("this run was collected with --no-dnc; it can only be a --dry-run")
     schema = load_schema()
     client = ctx = dnc = dnc_areas = None
     if live:
-        dnc = load_dnc()  # defence in depth: re-check every lead against the DNC files
-        _check_dnc_age(dnc)
-        dnc_areas = dnc.area_codes
+        if dnc_check:
+            dnc = load_dnc()  # defence in depth: re-check every lead against the DNC files
+            _check_dnc_age(dnc)
+            dnc_areas = dnc.area_codes
         client = client_from_env()
 
     results = []
@@ -174,8 +178,9 @@ def cmd_push(args):
             continue
         payload = cand.to_payload(merged)
         if live:
-            blocked = ("dnc" if is_listed(dnc, c["phone"]) else
-                       "dnc_area_not_loaded" if area_code(c["phone"]) not in dnc_areas else None)
+            blocked = None if dnc is None else (
+                "dnc" if is_listed(dnc, c["phone"]) else
+                "dnc_area_not_loaded" if area_code(c["phone"]) not in dnc_areas else None)
             if blocked:
                 results.append({"bot_run_id": c["bot_run_id"], "outcome": "rejected",
                                 "message": blocked})

@@ -142,7 +142,7 @@ def test_live_refused_while_seeds_not_live(tmp_path):
 
 
 def test_live_refused_for_no_dnc_run(tmp_path, monkeypatch):
-    monkeypatch.setattr(cli, "load_seeds", lambda: dataclasses.replace(load_seeds(), live=True))
+    monkeypatch.setattr(cli, "load_seeds", lambda: dataclasses.replace(load_seeds(), live=True, dnc_check=True))
     c = candidate()
     run_dir = write_run(tmp_path, [c], [qualified(c)], dnc_checked=False)
     with pytest.raises(SystemExit, match="--no-dnc"):
@@ -160,7 +160,7 @@ def live_env(monkeypatch, tmp_path):
                                   "picklistOptions": list(f.options)})
     seen_path = str(tmp_path / "seen.sqlite")
     monkeypatch.setattr(cli, "client_from_env", lambda: client)
-    monkeypatch.setattr(cli, "load_seeds", lambda: dataclasses.replace(load_seeds(), live=True))
+    monkeypatch.setattr(cli, "load_seeds", lambda: dataclasses.replace(load_seeds(), live=True, dnc_check=True))
     monkeypatch.setattr(cli, "SEEN_PATH", seen_path)
     monkeypatch.setattr(cli, "load_dnc", lambda: FRESH_DNC)
     return client, seen_path
@@ -185,6 +185,7 @@ def test_live_push_creates_lead_and_marks_seen(tmp_path, monkeypatch):
 
 
 def test_collect_refuses_without_dnc_files(tmp_path, monkeypatch):
+    monkeypatch.setattr(cli, "load_seeds", lambda: dataclasses.replace(load_seeds(), dnc_check=True))
     monkeypatch.setattr(cli, "load_dnc", lambda: cli.DncList())
     with pytest.raises(SystemExit, match="512"):
         cli.main(["collect", "--niche", "Counselors / therapists", "--city", "Austin, TX"])
@@ -239,6 +240,7 @@ def test_seen_marks_only_handled_leads(tmp_path, monkeypatch):
 
 
 def test_collect_refuses_stale_dnc_files(tmp_path, monkeypatch):
+    monkeypatch.setattr(cli, "load_seeds", lambda: dataclasses.replace(load_seeds(), dnc_check=True))
     stale = DncList({"5125550199", "7375550199"},
                     oldest_file_date=dt.date.today() - dt.timedelta(days=40))
     monkeypatch.setattr(cli, "load_dnc", lambda: stale)
@@ -479,3 +481,33 @@ def test_qualified_file_with_a_bad_byte_rejects_only_that_line(tmp_path):
     results = report_of(run_dir, "dry_run_report.json")["results"]
     assert [(r["outcome"], r["message"]) for r in results] == [
         ("would_push", ""), ("rejected", "malformed line 2")]
+
+
+def test_dnc_off_live_push_skips_dnc_files(tmp_path, monkeypatch):
+    client, _ = live_env(monkeypatch, tmp_path)
+    monkeypatch.setattr(cli, "load_seeds",
+                        lambda: dataclasses.replace(load_seeds(), live=True, dnc_check=False))
+    monkeypatch.setattr(cli, "load_dnc", lambda: pytest.fail("loaded DNC with dnc_check off"))
+    c = candidate()
+    run_dir = write_run(tmp_path, [c], [qualified(c)], dnc_checked=False)
+    assert push(run_dir) == 0
+    assert len(client.opportunities) == 1
+
+
+def test_dnc_off_collect_skips_dnc_files(tmp_path, monkeypatch):
+    from leadbot.bot.collect import Deps
+    from leadbot.bot.scrape import read_results
+    from tests.test_bot_collect import FIXTURE
+
+    places = read_results(FIXTURE)
+    monkeypatch.setattr(cli, "load_seeds", lambda: dataclasses.replace(load_seeds(), dnc_check=False))
+    monkeypatch.setattr(cli, "load_dnc", lambda: pytest.fail("loaded DNC with dnc_check off"))
+    monkeypatch.setattr(cli, "client_from_env", lambda: object())
+    monkeypatch.setattr(cli, "_real_deps", lambda run_dir, depth, client: Deps(
+        scrape=lambda queries, name: places, site_check=lambda url: None,
+        pagespeed=lambda url: None, domain_age=lambda url: None,
+        find_contact=lambda phone, email: None))
+    monkeypatch.setattr(cli, "RUNS_DIR", str(tmp_path / "runs"))
+    monkeypatch.setattr(cli, "SEEN_PATH", str(tmp_path / "seen.sqlite"))
+    assert cli.main(["collect", "--niche", "Counselors / therapists", "--city", "Austin, TX",
+                     "--today", "2026-11-06"]) == 0

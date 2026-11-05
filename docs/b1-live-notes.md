@@ -42,3 +42,7 @@ Scraper results differ between runs (236 vs 239 scraped; Providence Counseling a
 Effect: the signals now separate leads, but B1 yields about one call-ready (Warm) lead per city per night, because without ad signals an active unclaimed listing scores 30 and needs a broken site or a new business on top. Decision needed before go-live: scale volume (more areas/cities, a higher nightly cap), lower the B1 Warm threshold, or wait for B2's ad signals.
 
 Note: the chain check in this test was a quick name rule and wrongly dropped two practices with descriptive suffixes ("- Couples & Individual Counselor", "- Envisioned Counseling"); in the nightly run Claude judges chains from name, website and evidence.
+
+## DNC switched off (2026-11-05)
+
+`dnc_check = false` in `config/seeds.toml` (user decision: B2B calls, no FTC files). While adding the switch, a test that expected collect to stop at the DNC gate ran a real Austin collect for about 2 minutes before it was stopped: it rewrote `money.*` and `areas.*` raw scraper files in `state/runs/2026-11-05-counselors-therapists-austin-tx/` and stopped before enrichment, so no GHL calls were made and `candidates.jsonl`, `report.json`, `qualified.jsonl` and the seen store are unchanged. `tests/conftest.py` now fails any test that reaches the real scraper or GHL.

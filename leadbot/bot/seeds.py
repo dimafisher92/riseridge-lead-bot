@@ -21,6 +21,7 @@ class Seeds:
     seen_days: int
     niches: dict
     cities: dict
+    dnc_check: bool = True
 
 
 @dataclass(frozen=True)
@@ -39,9 +40,12 @@ def load_seeds(path=DEFAULT_SEEDS_PATH):
     live = raw.get("live", False)
     if not isinstance(live, bool):  # live = "false" must not switch pushes on
         raise SeedError(f"live must be true or false (a TOML boolean), not {live!r}")
+    dnc_check = raw.get("dnc_check", True)  # missing key = check on (fail safe)
+    if not isinstance(dnc_check, bool):
+        raise SeedError(f"dnc_check must be true or false (a TOML boolean), not {dnc_check!r}")
     return Seeds(live is True, int(raw["scraper_depth"]),
                  int(raw["max_enrich_per_city"]), int(raw["seen_days"]),
-                 dict(raw["niches"]), dict(raw["cities"]))
+                 dict(raw["niches"]), dict(raw["cities"]), dnc_check)
 
 
 def city_plan(seeds, niche, city):

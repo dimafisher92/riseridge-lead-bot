@@ -31,7 +31,7 @@ Decisions taken in chat 2026-11-05:
 - First run: niche Counselors / therapists; cities Austin, Dallas, Houston (TX).
 - Tier thresholds stay as in the SOP (Hot 70+, Warm 45-69, Cold under 45) although B1 cannot reach the ad points.
   - 2026-11-05, after the calibrated Austin dry run, the user lowered the B1 Warm cut to 30 (Hot 70 unchanged) until B2 adds the ad signals.
-- DNC: scrub in B1. The user registers with the FTC and saves the area-code files; go-live waits for them.
+- DNC: the scrub is built but switched off (`dnc_check = false` in `config/seeds.toml`, user decision 2026-11-05): the bot calls businesses, and go-live does not wait for FTC files. `dnc_check = true` restores every rule in section 8.
 
 ## 2. Pipeline
 
@@ -146,7 +146,7 @@ One Claude Code scheduled task, daily at 02:00 local, prompt: run the `leadbot-n
 
 ## 4. Compliance
 
-- DNC: the user registers for a National Do Not Call Registry Subscription Account Number at the FTC and downloads the area-code files for the target cities into `state/dnc/` (git-ignored). The three cities span about ten area codes (Austin 512, 737; Dallas 214, 469, 972, 945; Houston 713, 281, 832, 346); the first five are free, the rest are paid per area code, so the pilot may start with fewer. `collect` refuses to run for a city whose area codes have no file or when any loaded file is older than 31 days (the FTC scrub list must be no older than 31 days), drops listed numbers and numbers whose area code has no loaded file, and a live `push` loads the DNC files again, refuses them under the same 31-day age rule, and checks every lead against them. A `dnc_area_not_loaded` drop is not marked seen, so adding that area code's file brings the place back the next night. Not legal advice.
+- DNC: the user registers for a National Do Not Call Registry Subscription Account Number at the FTC and downloads the area-code files for the target cities into `state/dnc/` (git-ignored). The three cities span about ten area codes (Austin 512, 737; Dallas 214, 469, 972, 945; Houston 713, 281, 832, 346); the first five are free, the rest are paid per area code, so the pilot may start with fewer. `collect` refuses to run for a city whose area codes have no file or when any loaded file is older than 31 days (the FTC scrub list must be no older than 31 days), drops listed numbers and numbers whose area code has no loaded file, and a live `push` loads the DNC files again, refuses them under the same 31-day age rule, and checks every lead against them. A `dnc_area_not_loaded` drop is not marked seen, so adding that area code's file brings the place back the next night. All of this applies only while `dnc_check = true`; with `dnc_check = false` (the B1 setting since 2026-11-05) collect loads no DNC files and drops nothing for DNC, and a live push accepts runs collected without a scrub. Not legal advice.
 - No autodialing or SMS (unchanged from part A).
 - Scraping Google Maps directly is against Google's terms of service; the SOP recommends providers. The user chose the open-source scraper with that risk; the bot keeps one worker and small nightly volumes.
 - Only business contact data is stored.
@@ -167,5 +167,5 @@ One Claude Code scheduled task, daily at 02:00 local, prompt: run the `leadbot-n
 
 ## 7. Prerequisites from the user
 
-1. FTC DNC registration and area-code files in `state/dnc/`.
+1. ~~FTC DNC registration and area-code files in `state/dnc/`.~~ Skipped: `dnc_check = false` (user decision 2026-11-05).
 2. Keep the Claude app open overnight on this PC (or accept next-launch runs).
