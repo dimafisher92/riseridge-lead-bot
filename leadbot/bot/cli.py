@@ -127,22 +127,32 @@ def cmd_push(args):
             ctx = load_context(client, schema)
         except GHLAuthError as exc:
             auth_error = f"GHL auth error: {exc}"  # nothing is pushed; every line is aborted
+    lines_seen = set()
     for q in cand.read_jsonl(args.file):
+        run_id = q.get("bot_run_id") if isinstance(q, dict) else None
+        run_id = run_id if isinstance(run_id, str) else None
         if auth_error:
-            results.append({"bot_run_id": q.get("bot_run_id"), "outcome": "aborted",
-                            "message": auth_error})
+            results.append({"bot_run_id": run_id, "outcome": "aborted", "message": auth_error})
             continue
-        c = candidates.get(q.get("bot_run_id"))
+        if run_id in lines_seen:
+            results.append({"bot_run_id": run_id, "outcome": "rejected", "message": "duplicate line"})
+            continue
+        if run_id is not None:
+            lines_seen.add(run_id)
+        c = candidates.get(run_id)
         if c is None:
-            results.append({"bot_run_id": q.get("bot_run_id"), "outcome": "rejected",
+            results.append({"bot_run_id": run_id, "outcome": "rejected",
                             "message": "not in candidates.jsonl"})
             continue
-        try:
-            cand.check_qualified(q, c)
-        except cand.QualifiedError as exc:
-            results.append({"bot_run_id": c["bot_run_id"], "outcome": "rejected", "message": str(exc)})
+        if not cand.needs_text(c):
+            results.append({"bot_run_id": run_id, "outcome": "rejected", "message": "not eligible"})
             continue
-        payload = cand.to_payload(q)
+        try:
+            merged = cand.merge_qualified(q, c)
+        except cand.QualifiedError as exc:
+            results.append({"bot_run_id": run_id, "outcome": "rejected", "message": str(exc)})
+            continue
+        payload = cand.to_payload(merged)
         if live:
             blocked = ("dnc" if is_listed(dnc, c["phone"]) else
                        "dnc_area_not_loaded" if area_code(c["phone"]) not in dnc_areas else None)
@@ -171,8 +181,10 @@ def cmd_push(args):
             results.append({"bot_run_id": c["bot_run_id"], "outcome": "rejected", "message": str(exc)})
 
     if live:
-        _mark_seen(run_dir, candidates, {r["bot_run_id"]: r["outcome"] for r in results},
-                   dt.date.today())
+        outcomes = {}
+        for r in results:  # the first line for a lead decides; a duplicate line never overrides it
+            outcomes.setdefault(r["bot_run_id"], r["outcome"])
+        _mark_seen(run_dir, candidates, outcomes, dt.date.today())
     counts = dict(Counter(r["outcome"] for r in results))
     name = "push_report.json" if live else "dry_run_report.json"
     with open(os.path.join(run_dir, name), "w", encoding="utf-8") as fh:

@@ -34,10 +34,14 @@ def candidate(n=1, **over):
     return c
 
 
+SUMMARY = "Google listing has no owner.\nOnly 4 reviews, all from the last two months."
+OPENER = ("Hi, I noticed Bright Path Counseling's Google listing has no owner, "
+          "so it may be missing calls.")
+
+
 def qualified(c, **over):
-    q = dict(c, audit_summary="Google listing has no owner.\nOnly 4 reviews, all from the last two months.",
-             call_opener="Hi, I noticed Bright Path Counseling's Google listing has no owner, "
-                         "so it may be missing calls.")
+    """A qualified.jsonl line: the bot_run_id and the two texts Claude writes, nothing else."""
+    q = {"bot_run_id": c["bot_run_id"], "audit_summary": SUMMARY, "call_opener": OPENER}
     q.update(over)
     return q
 
@@ -73,12 +77,55 @@ def test_dry_run_validates_without_ghl(tmp_path, monkeypatch):
     assert report_of(run_dir, "dry_run_report.json")["counts"] == {"would_push": 1}
 
 
-def test_changed_score_is_rejected(tmp_path):
+def test_dry_run_validates_the_merged_record(tmp_path, monkeypatch):
+    validated = []
+    monkeypatch.setattr(cli, "validate_payload", lambda payload, schema: validated.append(payload))
     c = candidate()
-    run_dir = write_run(tmp_path, [c], [qualified(c, lead_score=90)])
+    run_dir = write_run(tmp_path, [c], [qualified(c)])
+    assert push(run_dir, "--dry-run") == 0
+    payload = validated[0]
+    assert (payload["audit_summary"], payload["call_opener"]) == (SUMMARY, OPENER)
+    assert payload["lead_score"] == c["lead_score"] and payload["phone"] == c["phone"]
+    assert "place_id" not in payload and "evidence" not in payload
+
+
+def test_any_field_besides_the_texts_is_rejected(tmp_path):
+    c = candidate()
+    run_dir = write_run(tmp_path, [c], [qualified(c, lead_score=c["lead_score"])])
     assert push(run_dir, "--dry-run") == 1
     result = report_of(run_dir, "dry_run_report.json")["results"][0]
-    assert result["outcome"] == "rejected" and "lead_score" in result["message"]
+    assert result["outcome"] == "rejected" and "unexpected field lead_score" in result["message"]
+
+
+def test_line_for_a_lead_that_needs_no_text_is_rejected(tmp_path):
+    cold = candidate(lead_tier="Cold", lead_score=10, email=None)
+    run_dir = write_run(tmp_path, [cold], [qualified(cold)])
+    assert push(run_dir, "--dry-run") == 1
+    result = report_of(run_dir, "dry_run_report.json")["results"][0]
+    assert (result["outcome"], result["message"]) == ("rejected", "not eligible")
+
+
+def test_second_line_for_the_same_lead_is_rejected(tmp_path, monkeypatch):
+    _, seen_path = live_env(monkeypatch, tmp_path)
+    c = candidate()
+    run_dir = write_run(tmp_path, [c], [qualified(c), qualified(c, call_opener="Hi again.")])
+    assert push(run_dir) == 1
+    results = report_of(run_dir, "push_report.json")["results"]
+    assert [(r["outcome"], r["message"]) for r in results][1] == ("rejected", "duplicate line")
+    assert results[0]["outcome"] == "created"
+    store = SeenStore(seen_path)
+    try:
+        assert store.recently_seen("fx-1", dt.date.today(), 30)  # first line's outcome counts
+    finally:
+        store.close()
+
+
+def test_line_that_is_not_an_object_is_rejected(tmp_path):
+    c = candidate()
+    run_dir = write_run(tmp_path, [c], [["not", "an", "object"], qualified(c)])
+    assert push(run_dir, "--dry-run") == 1
+    outcomes = [r["outcome"] for r in report_of(run_dir, "dry_run_report.json")["results"]]
+    assert outcomes == ["rejected", "would_push"]
 
 
 def test_unknown_bot_run_id_is_rejected(tmp_path):

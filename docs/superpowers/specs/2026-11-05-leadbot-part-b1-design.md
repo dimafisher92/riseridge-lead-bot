@@ -133,9 +133,9 @@ The skill tells the scheduled task to, for each candidate that is Hot, Warm, or 
 1. Decide `franchise_or_chain` from the name, website and categories; if TRUE, drop with a reason (written to `dropped.jsonl`).
 2. Write `audit_summary`: at most 3 short lines a rep can say out loud, facts only from `evidence`, "unknown" where data is missing.
 3. Write `call_opener`: one sentence under 30 words naming the business and the primary signal; friendly, no hype.
-4. Never change signals, score or tier.
+4. Write only the two texts: each `qualified.jsonl` line is `{"bot_run_id", "audit_summary", "call_opener"}`.
 
-`push` re-validates every qualified line: score, tier and signals must equal the candidate's; text fields non-empty and within limits. A mismatch rejects that line.
+`push` merges each line into its candidate (every other field comes from `candidates.jsonl`) and rejects a line that has any other key, a text that is empty or over its limit (summary over 3 lines or 400 characters; opener of 30 words or more), a `bot_run_id` already seen in the file (`duplicate line`), or a candidate that needs no text (`not eligible`).
 
 ### 3.9 Scheduling
 

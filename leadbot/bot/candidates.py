@@ -7,11 +7,12 @@ from leadbot.bot.score import SIGNAL_ORDER
 from leadbot.bot.signals import TRUE, UNKNOWN
 
 EXTRA_KEYS = ("evidence", "unknown", "place_id")
-# Claude may only fill these two text fields; every other candidate field must come back unchanged.
+# Claude writes only these two text fields; a qualified line carries them plus bot_run_id.
 TEXT_FIELDS = ("audit_summary", "call_opener")
+QUALIFIED_KEYS = ("bot_run_id",) + TEXT_FIELDS
 MAX_SUMMARY_LINES = 3
 MAX_SUMMARY_CHARS = 400
-MAX_OPENER_WORDS = 30
+MAX_OPENER_WORDS = 30  # the opener must be under this many words
 
 
 class QualifiedError(ValueError):
@@ -54,27 +55,34 @@ def to_payload(record):
     return {k: v for k, v in record.items() if k not in EXTRA_KEYS}
 
 
-def check_qualified(qualified, candidate):
+def merge_qualified(qualified, candidate):
+    """Check one qualified.jsonl line ({bot_run_id, audit_summary, call_opener}) and return
+    the candidate with the two texts filled in. Every other field comes from the candidate."""
     run_id = candidate["bot_run_id"]
-    for key in candidate:
-        if key in TEXT_FIELDS:
-            continue
-        if qualified.get(key) != candidate[key]:
-            raise QualifiedError(f"{run_id}: {key} changed")
+    if not isinstance(qualified, dict):
+        raise QualifiedError(f"{run_id}: line is not a JSON object")
     for key in qualified:
-        if key not in candidate:
+        if key not in QUALIFIED_KEYS:
             raise QualifiedError(f"{run_id}: unexpected field {key}")
-    summary = (qualified.get("audit_summary") or "").strip()
+    if qualified.get("bot_run_id") != run_id:
+        raise QualifiedError(f"{run_id}: bot_run_id does not match")
+    texts = {}
+    for key in TEXT_FIELDS:
+        value = qualified.get(key)
+        if value is not None and not isinstance(value, str):
+            raise QualifiedError(f"{run_id}: {key} is not text")
+        texts[key] = (value or "").strip()
+    summary, opener = texts["audit_summary"], texts["call_opener"]
     if not summary:
         raise QualifiedError(f"{run_id}: audit_summary is empty")
     if len(summary.splitlines()) > MAX_SUMMARY_LINES or len(summary) > MAX_SUMMARY_CHARS:
         raise QualifiedError(f"{run_id}: audit_summary over {MAX_SUMMARY_LINES} lines "
                              f"or {MAX_SUMMARY_CHARS} characters")
-    opener = (qualified.get("call_opener") or "").strip()
     if not opener:
         raise QualifiedError(f"{run_id}: call_opener is empty")
-    if len(opener.split()) > MAX_OPENER_WORDS:
-        raise QualifiedError(f"{run_id}: call_opener over {MAX_OPENER_WORDS} words")
+    if len(opener.split()) >= MAX_OPENER_WORDS:
+        raise QualifiedError(f"{run_id}: call_opener must be under {MAX_OPENER_WORDS} words")
+    return dict(candidate, **texts)
 
 
 def write_jsonl(path, records):
