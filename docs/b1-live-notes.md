@@ -59,3 +59,19 @@ Note: the chain check in this test was a quick name rule and wrongly dropped two
 | 001. New Lead + AEO Nurture (DRAFT - review) | draft | 2026-11-05 01:43 | does not run while a draft; its name suggests a new-lead nurture, so check its triggers exclude `bot-lead` contacts before anyone publishes it |
 
 Both published edits predate the part A live tests (run after 20:58), which showed no side effects on bot contacts. Result: no new published workflow touches bot leads.
+
+## First live push, Austin (2026-11-05, run `2026-11-05-counselors-therapists-austin-tx`)
+
+`live = true`, `dnc_check = false` (commit 84da189). The calibrated dry-run folder was kept as `state/runs/2026-11-05-austin-dry-run-calibrated`.
+
+- Collect: 232 scraped, dropped 10 no phone, 23 shared phone, 49 over the nightly cap of 150 (not marked seen, collected again later). Tiers: 0 Hot, 4 Warm, 146 Cold; 53 needed text.
+- Qualify: 4 dropped as chains or part of a larger organisation (Respark Therapy - South Austin Office, Better Health Counseling - Round Rock, Alliance Counseling Works- Round Rock, Hope Counseling Center of Texas Baptist Children's Home). 49 qualified lines; dry run 49 would_push.
+- Live push: 49 created, 0 rejected, 0 failed.
+- QA by API, every contact:
+  - 4 Warm: contact owner Sergey Vitrenko, one open deal owned by him, one call task ("Call: Broken Site" x2, "Call: GBP Suspended" x2) due 2026-11-07 10:00 EST.
+  - 45 Cold (with email): no owner, no deal, no task, as in part A.
+  - All 49 carry `bot-lead` and only the bot's own tags (tier, niche, signal).
+  - Conversations: only 4 "opportunity created" activity entries, no SMS, email or call.
+- Seen store: 49 created, 97 cold_no_email, 4 franchise_or_chain, 10 no_phone, 23 shared_phone.
+
+Finding: 2026-11-07 is a Saturday. The Route workflow's Warm task delay (two days) does not skip weekends, so a Thursday-night push makes Warm tasks due on Saturday. Decide whether the Route task should skip weekends before the nightly schedule starts.
