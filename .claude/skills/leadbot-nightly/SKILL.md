@@ -7,6 +7,8 @@ description: Nightly RiseRidge lead bot run (part B1). Collects counselor/therap
 
 Repository: `D:/Claude Code/riseridge-leadbot`. Run every command from there with `python`. Never print or open `.env`.
 
+Run sections 1 to 3 for one city at a time, in the file order of `config/seeds.toml`, before starting the next city. Section 4 reports on all cities at the end.
+
 ## 1. Collect, once per city
 
 Cities: every `[cities."..."]` table in `config/seeds.toml`, in file order. Niche: `Counselors / therapists`.
@@ -18,6 +20,8 @@ python -m leadbot.bot collect --niche "Counselors / therapists" --city "<city>"
 - Exit 0: continue with that city.
 - Exit 2 (`blocked_or_failed`): note it for the report and skip the city. Do not retry in the same run.
 - Stops with "No DNC file for area codes": if `config/seeds.toml` has `live = false`, rerun the same command with `--no-dnc`. If `live = true`, skip the city and report the missing area codes.
+- Stops with "Set GMAPS_SCRAPER_EXE in .env": stop the whole run and report that the scraper path is not configured.
+- Any other non-zero exit or error: note the first line of the error in the report, skip the city, and do not retry.
 
 The printed report names the `run_id`; the run folder is `state/runs/<run_id>/`.
 
