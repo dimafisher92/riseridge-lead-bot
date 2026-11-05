@@ -2259,3 +2259,39 @@ Show the user every Hot and Warm lead: business name, signals with evidence, sco
 - [ ] **Step 4: First live push, Austin only.** Run the nightly skill for Austin alone (collect with DNC, qualify, push). Then check in GHL: contacts, owner Sergey, Bot Leads deals in New, call tasks. Every Hot lead is checked by hand with the user (SOP week 2).
 - [ ] **Step 5: Schedule.** With the user's yes, create the Claude Code scheduled task `leadbot-nightly`, cron `0 2 * * *` (local time), prompt: "In D:/Claude Code/riseridge-leadbot, run the project skill .claude/skills/leadbot-nightly/SKILL.md for every city in config/seeds.toml and report as that skill says." Tell the user it runs only while the Claude app is open.
 - [ ] **Step 6: Record** the go-live in `docs/b1-live-notes.md` and commit.
+
+---
+
+### Task 12: Signal calibration (added 2026-11-05 after the Austin dry run)
+
+Why: in the Austin dry run (`docs/b1-live-notes.md`) `rank_gap` was TRUE for 147 of 150 places and `competitor_gap` for 130, so neither separated leads; `broken_website` (84 of 150) counted bot-refused fetches and JavaScript-rendered sites as broken; and most Warm leads were unclaimed listings with no review for years. Rules approved by the user in chat on 2026-11-05.
+
+**Files:** Modify `leadbot/bot/signals.py`, `leadbot/bot/site_check.py`, `leadbot/bot/score.py`, `config/scoring.toml`, `leadbot/bot/collect.py`, `leadbot/bot/candidates.py`; tests in the matching `tests/test_bot_*.py`; spec sections 3.4-3.7 in `docs/superpowers/specs/2026-11-05-leadbot-part-b1-design.md`.
+
+**Rules (exact):**
+
+1. `rank_gap` (money keyword position, 1-based, from `RankInfo.position`):
+   - position 1-3 → FALSE, evidence "#N on Maps for '<kw>' (map pack)";
+   - position 4-20 → TRUE, evidence "#N on Maps for '<kw>', just outside the map pack";
+   - position 21 or worse → FALSE, evidence "#N on Maps for '<kw>'";
+   - not in the money results (position None) → UNKNOWN, evidence "not in the top <checked> on Maps for '<kw>'" (evidence is still recorded for UNKNOWN in the candidate's `unknown` list; see rule 6);
+   - no money results at all (checked 0) → UNKNOWN as today.
+   - Constants: `MAP_PACK = 3`, `NEAR_MISS_MAX = 20`.
+2. `competitor_gap`: evaluated only when the place is in the money results (position not None); otherwise UNKNOWN "not in the results for '<kw>'". Rivals are the first 3 money places, excluding the place itself AND excluding chain listings. A chain listing is one whose brand key appears on more than one listing among all places scraped in the run (money + areas). Brand key: the name lowercased, cut at the first " - ", " | ", " – " or " (", stripped. `rank_info(place_id, money_places, keyword, chain_keys=frozenset())` takes the set of chain brand keys; `collect_city` computes it once per city from the merged place list. If fewer than 1 non-chain rival exists → UNKNOWN "no independent competitors to compare". TRUE when the rivals' average review_count ≥ 3 × max(place.review_count, 1), as today.
+3. `broken_website`:
+   - `SiteCheck` gains `blocked: bool = False` and `status: int | None = None`. `check_site`: an `urllib.error.HTTPError` (or a returned status ≥ 400) with status 401, 403, 429 or 503 → `SiteCheck(False, final_url, blocked=True, status=code)`; any other HTTP error status → `SiteCheck(False, final_url, status=code)`; any other exception (DNS, refused connection, timeout, TLS) → `SiteCheck(False)`.
+   - `_site`: no website → TRUE (unchanged); site not checked → UNKNOWN (unchanged); `blocked` → UNKNOWN "website refused the bot's request (HTTP <code>)"; not reachable → TRUE "website <url> did not load" (add " (HTTP <code>)" when status is known).
+   - Loaded page: TRUE when (no lead form AND no click-to-call link) OR (pagespeed is not None and pagespeed < 40). Evidence lists every missing item including "no conversion tag" as information. Otherwise FALSE. The missing tracking tag alone never makes it TRUE.
+4. Inactive listing (new negative signal): `negatives(place, today) -> dict[str, Signal]` in signals.py returns `{"inactive_listing": Signal(TRUE, "newest visible review <date>, over 2 years ago")}` when `place.review_dates` is non-empty and `(today - place.review_dates[-1]).days > 730`; otherwise `{"inactive_listing": Signal(FALSE, ...)}` (or UNKNOWN "no review dates" when there are no dates). Constant `INACTIVE_DAYS = 730`.
+5. Scoring: `config/scoring.toml` `[weights]` gains `negative_signal = 30`. `lead_score(true_signals, niche, scoring, ads_spend=None, negatives=())` subtracts `negative_signal` once per TRUE negative, after the positives and the retention bonus, floor 0, cap 100. Existing callers without `negatives` behave as today. `primary_flag` is unchanged (negatives never become the primary signal).
+6. Candidate record: gains `negatives` (list of TRUE negative names, e.g. `["inactive_listing"]`) and the negative's evidence under `evidence` (key `inactive_listing`) when TRUE. Add `"negatives"` to `EXTRA_KEYS` so it never reaches GHL. `signals` stays positive flags only (the schema rejects unknown flags). Also keep the evidence of UNKNOWN rank/competitor signals under a new candidate key `notes` (dict, signal → evidence) so the rep still sees "not in the top 60"; add `"notes"` to `EXTRA_KEYS`.
+7. Nightly skill: in section 2, the audit summary may use `evidence` and `notes`; never present a `notes` item as a problem signal (it is context, e.g. "not in the top 60 for 'therapist austin'").
+
+**Tests (each written first, seen failing):**
+- signals: rank 3 FALSE, 4 TRUE, 20 TRUE, 21 FALSE, None UNKNOWN with "not in the top" evidence; competitor gap UNKNOWN when position None; chain rivals excluded (a money list whose first two places share a brand key "acme counseling" gives rivals from the next independents); all rivals chains → UNKNOWN; blocked site → UNKNOWN; loaded page with no form only (call link present, tag missing) → FALSE; no form and no call link → TRUE; call link present, PageSpeed 30 → TRUE; inactive: newest review 731 days ago → TRUE, 730 → FALSE, no dates → UNKNOWN.
+- site_check: fake fetch raising `urllib.error.HTTPError(url, 403, ...)` → `blocked=True, status=403`; 404 → `blocked=False, status=404, reachable=False`; OSError → `SiteCheck(False)`.
+- score: negatives subtract 30, floor 0 (e.g. score 20 with one negative → 0); without negatives unchanged.
+- collect: update existing expectations deliberately (show the reasoning in the report): Bright Path (not in money results) now has rank_gap and competitor_gap UNKNOWN, so its score is 25+15+15+5 = 60 (Warm); assert `negatives == []` and `notes` contains rank_gap; add a fixture-independent test that an inactive place (newest review over 2 years old) carries `negatives == ["inactive_listing"]` and a score lowered by 30; `to_payload` output contains neither `negatives` nor `notes`.
+- cli: the existing live-push test still passes (payload unchanged).
+
+Commit in one or two commits ("feat(bot): calibrate rank, competitor and website signals; inactive-listing negative").
