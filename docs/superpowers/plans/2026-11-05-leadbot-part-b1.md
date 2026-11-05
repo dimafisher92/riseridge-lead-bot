@@ -2300,6 +2300,8 @@ Commit in one or two commits ("feat(bot): calibrate rank, competitor and website
 
 ### Task 14: Go-live blockers (added 2026-11-05, user approved)
 
+> **Superseded in part (2026-11-05, user ruling after review):** rule 1's `bot-lead` tag re-admit was replaced by "retry only leads whose push failed": a live push records `failed` in the seen store, and collect keeps an existing GHL contact only when its last outcome is `failed` (commit e16e707). The tag rule and its tests below are history.
+
 Why: residuals parked after the final-review fix wave (`.superpowers/sdd/.../progress.md`, "Parked for Task 11"). The first one loses leads; the others fail closed today but cost a night or a month.
 
 **Files:** `leadbot/bot/collect.py`, `leadbot/bot/cli.py`, `leadbot/bot/candidates.py` (only if needed for reading lines), tests in `tests/test_bot_collect.py` and `tests/test_bot_cli.py`, spec sections 3.3 and 5. Part A stays unchanged.
