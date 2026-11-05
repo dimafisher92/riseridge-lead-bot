@@ -245,3 +245,65 @@ def test_report_counts_bad_rows(tmp_path):
     report, _, _ = run(run_dir, deps=deps)
     assert report["status"] == "ok" and report["bad_rows"] == 1
     assert run(tmp_path / "plain")[0]["bad_rows"] == 0
+
+
+def with_extra(*extra):
+    deps = make_deps()
+    everything = list(PLACES.values()) + list(extra)
+    deps.scrape = lambda queries, name: MONEY if name == "money" else everything
+    return deps
+
+
+def test_second_place_with_same_phone_is_dropped(tmp_path):
+    twin = dataclasses.replace(PLACES["fx-brightpath"], place_id="fx-twin",
+                               phone=PLACES["fx-lakeview"].phone)
+    report, cands, dropped = run(tmp_path, deps=with_extra(twin))
+    assert dropped["fx-twin"] == "shared_phone"
+    assert "fx-lakeview" in cands and "fx-twin" not in cands
+    assert report["dropped"]["shared_phone"] == 1
+
+
+def test_shared_phone_is_dropped_before_the_cap(tmp_path):
+    twin = dataclasses.replace(PLACES["fx-brightpath"], place_id="fx-twin",
+                               phone=PLACES["fx-lakeview"].phone)
+    deps = make_deps()
+    deps.scrape = lambda queries, name: [PLACES["fx-lakeview"], twin, PLACES["fx-sunrise"]]
+    seeds = dataclasses.replace(load_seeds(), max_enrich=2)
+    _, cands, dropped = run(tmp_path, seeds=seeds, deps=deps)
+    assert set(cands) == {"fx-lakeview", "fx-sunrise"}
+    assert dropped == {"fx-twin": "shared_phone"}
+
+
+def test_email_found_on_two_sites_is_cleared_on_both(tmp_path):
+    deps = make_deps()
+    deps.site_check = lambda url: dataclasses.replace(sites(url), email="info@shared.example.com")
+    report, cands, _ = run(tmp_path, deps=deps)
+    assert cands["fx-lakeview"]["email"] is None
+    assert cands["fx-brightpath"]["email"] is None
+    assert cands["fx-sunrise"]["email"] is None
+    assert cands["fx-cedar"]["email"] == "hello@cedar.example.com"  # Maps email, not shared
+    assert report["needs_text"] == 2  # the cleared email does not make Lakeview need text
+
+
+def test_site_email_on_another_domain_is_dropped(tmp_path):
+    deps = make_deps()
+
+    def site_check(url):
+        found = {"lakeview": "studio@webdesign.example.net",
+                 "brightpath": "hello@brightpath.example.com"}
+        key = next((k for k in found if k in url), None)
+        return dataclasses.replace(sites(url), email=found.get(key))
+    deps.site_check = site_check
+    _, cands, _ = run(tmp_path, deps=deps)
+    assert cands["fx-lakeview"]["email"] is None
+    assert cands["fx-brightpath"]["email"] == "hello@brightpath.example.com"
+
+
+def test_foreign_site_email_falls_back_to_maps_email(tmp_path):
+    cedar_site = dataclasses.replace(PLACES["fx-cedar"], place_id="fx-cedar2",
+                                     phone="+15125550138", website="https://cedar2.example.org/",
+                                     email="owner@cedar2.example.org")
+    deps = with_extra(cedar_site)
+    deps.site_check = lambda url: dataclasses.replace(sites(url), email="studio@webdesign.example.net")
+    _, cands, _ = run(tmp_path, deps=deps)
+    assert cands["fx-cedar2"]["email"] == "owner@cedar2.example.org"

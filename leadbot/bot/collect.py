@@ -7,6 +7,7 @@ from dataclasses import dataclass
 
 from leadbot.bot import candidates as cand
 from leadbot.bot.dnc import area_code, is_listed
+from leadbot.bot.domain_age import registrable_domain
 from leadbot.bot.score import lead_score, lead_tier, primary_flag
 from leadbot.bot.scrape import ScrapeError
 from leadbot.bot.signals import Enrichment, detect, gbp_status, rank_info, true_flags
@@ -75,6 +76,18 @@ def _enrich(place, money, plan, deps, today):
     return enrich, rank, signals
 
 
+def _email(place, enrich):
+    """The site's mailto address only when it is on the website's own domain (a web
+    designer's or platform's address would merge unrelated leads); else the Maps email."""
+    site_email = enrich.site.email if enrich.site else None
+    if site_email:
+        own = registrable_domain(place.website)
+        if not own or registrable_domain("https://" + site_email.rsplit("@", 1)[-1]) != own:
+            site_email = None
+    email = site_email or place.email
+    return email.lower() if email else None
+
+
 def _drop_row(place, reason):
     return {"place_id": place.place_id, "business_name": place.name, "reason": reason}
 
@@ -113,12 +126,23 @@ def collect_city(plan, seeds, scoring, schema, deps, *, run_id, run_dir, today, 
             dropped.append(_drop_row(place, reason))
         else:
             kept.append(place)
+    # One phone, one lead: a later listing would overwrite the first one's GHL contact.
+    phones, unique = set(), []
+    for place in kept:
+        if place.phone in phones:
+            dropped.append(_drop_row(place, "shared_phone"))
+        else:
+            phones.add(place.phone)
+            unique.append(place)
+    kept = unique
     dropped += [_drop_row(p, "over_nightly_cap") for p in kept[seeds.max_enrich:]]
     kept = kept[:seeds.max_enrich]
 
+    enriched = [(place, *_enrich(place, money, plan, deps, today)) for place in kept]
+    emails = [_email(place, enrich) for place, enrich, _, _ in enriched]
+    shared = {e for e, count in Counter(e for e in emails if e).items() if count > 1}
     records = []
-    for n, place in enumerate(kept, 1):
-        enrich, rank, signals = _enrich(place, money, plan, deps, today)
+    for n, ((place, enrich, rank, signals), email) in enumerate(zip(enriched, emails), 1):
         flags = true_flags(signals)
         score = lead_score(flags, plan.niche, scoring)
         flag = primary_flag(flags, scoring)
@@ -126,7 +150,7 @@ def collect_city(plan, seeds, scoring, schema, deps, *, run_id, run_dir, today, 
             place, signals, score=score, tier=lead_tier(score, scoring),
             primary=schema.signals[flag] if flag else None, plan=plan,
             bot_run_id=f"{run_id}-{n:04d}",
-            email=(enrich.site.email if enrich.site else None) or place.email,
+            email=None if email in shared else email,
             gbp_status=gbp_status(place), rank=rank))
 
     cand.write_jsonl(os.path.join(run_dir, "candidates.jsonl"), records)
