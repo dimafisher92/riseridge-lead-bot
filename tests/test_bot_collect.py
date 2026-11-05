@@ -318,9 +318,9 @@ def test_foreign_site_email_falls_back_to_maps_email(tmp_path):
 def test_inactive_listing_is_a_negative_that_lowers_the_score(tmp_path):
     def twin(place_id, name, phone, newest):
         return dataclasses.replace(PLACES["fx-brightpath"], place_id=place_id, name=name, phone=phone,
-                                   website=None, owner_claimed=False, review_count=50,
+                                   website=None, owner_claimed=False, review_count=1,
                                    review_dates=(newest,), email=None)
-    active = twin("fx-active", "Active Practice (fictional)", "+15125550150", TODAY - dt.timedelta(days=30))
+    active = twin("fx-active", "Active Practice (fictional)", "+15125550150", TODAY - dt.timedelta(days=120))
     stale = twin("fx-stale", "Stale Practice (fictional)", "+15125550151", TODAY - dt.timedelta(days=731))
     _, cands, _ = run(tmp_path, deps=with_extra(active, stale))
     assert cands["fx-active"]["negatives"] == []
@@ -329,6 +329,7 @@ def test_inactive_listing_is_a_negative_that_lowers_the_score(tmp_path):
         f"newest visible review {(TODAY - dt.timedelta(days=731)).isoformat()}, over 2 years ago"
     assert cands["fx-stale"]["lead_score"] == cands["fx-active"]["lead_score"] - 30
     assert cands["fx-stale"]["signals"] == cands["fx-active"]["signals"]  # negatives stay out of flags
+    assert cands["fx-stale"]["primary_signal"] == cands["fx-active"]["primary_signal"] == "GBP Suspended"
     assert "inactive_listing" not in cands["fx-active"]["evidence"]
 
 
@@ -351,3 +352,10 @@ def test_chain_listings_are_not_rivals(tmp_path):
     _, cands, _ = run(tmp_path, deps=deps)
     # Bright Path is 5th; rivals are Lakeview (412) and Cedar (9), not the 2000-review chain.
     assert cands["fx-brightpath"]["evidence"]["competitor_gap"].startswith("top 3 for 'therapist austin' average 210 ")
+
+
+def test_sampled_old_reviews_do_not_make_a_listing_inactive(tmp_path):
+    _, cands, _ = run(tmp_path)
+    cedar = cands["fx-cedar"]  # 9 reviews, only 2 visible, both from 2024
+    assert cedar["negatives"] == [] and "inactive_listing" not in cedar["evidence"]
+    assert cedar["lead_score"] == 25  # broken 15 + rank 0 + competitor 5 + retention 5

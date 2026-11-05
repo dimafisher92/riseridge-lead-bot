@@ -63,6 +63,3 @@ def test_negative_score_floors_at_zero():
     assert lead_score({"new_business"}, "Roofing", S, negatives=("inactive_listing",)) == 0
     assert lead_score(set(), "Roofing", S, negatives=("inactive_listing",)) == 0
 
-
-def test_negatives_never_change_the_primary_flag():
-    assert primary_flag({"rank_gap"}, S) == "rank_gap"

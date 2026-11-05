@@ -146,6 +146,10 @@ def negatives(place, today):
     dates = place.review_dates
     if not dates:
         return {"inactive_listing": Signal(UNKNOWN, "no review dates")}
+    # Maps shows only a sample of the reviews; an unseen newer one would make TRUE wrong.
+    if len(dates) < place.review_count:
+        return {"inactive_listing": Signal(
+            UNKNOWN, f"only {len(dates)} of {place.review_count} reviews visible")}
     newest = dates[-1]
     if (today - newest).days > INACTIVE_DAYS:
         return {"inactive_listing": Signal(TRUE, f"newest visible review {newest.isoformat()}, "

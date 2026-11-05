@@ -117,7 +117,7 @@ Each signal is TRUE, FALSE or UNKNOWN, with a one-line evidence string. UNKNOWN 
 | `competitor_gap` | only evaluated when the place is in the money results (otherwise UNKNOWN). The rivals are the first 3 money places excluding the place itself and chain listings (a brand key, the lowercased name cut at the first " - ", " | ", " – " or " (", that appears on more than one listing among all places scraped for the city in that run). No independent rival is UNKNOWN. TRUE when the rivals' average `review_count` is at least 3× this place's (minimum 1). |
 | `google_ads_spend`, `meta_ads_active`, `technical_debt` | always UNKNOWN in B1. |
 
-**Negative signal** (`negatives(place, today)`, never a GHL flag): `inactive_listing` is TRUE when the newest visible review is more than 730 days (`INACTIVE_DAYS`) old; FALSE otherwise; UNKNOWN when the place has no review dates. It lowers the score and is not part of `signals`.
+**Negative signal** (`negatives(place, today)`, never a GHL flag): `inactive_listing` is TRUE when every review is visible (dated reviews number at least `review_count`) and the newest is more than 730 days (`INACTIVE_DAYS`) old; FALSE when every review is visible and the newest is recent; UNKNOWN when the place has no review dates or only a sample is visible ("only N of M reviews visible"), because an unseen newer review would make TRUE wrong. It lowers the score and is not part of `signals`.
 
 Relative review ages ("2 weeks ago", "Edited a month ago", "a year ago") are parsed to an approximate age in days; unparseable text means UNKNOWN for that review.
 

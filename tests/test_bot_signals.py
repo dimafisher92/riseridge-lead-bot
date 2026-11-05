@@ -196,9 +196,17 @@ def test_all_rivals_chains_gives_no_average():
 def test_inactive_listing_window():
     def at(days):
         dates = (TODAY - dt.timedelta(days=days),)
-        return negatives(place(review_dates=dates), TODAY)["inactive_listing"]
+        return negatives(place(review_count=1, review_dates=dates), TODAY)["inactive_listing"]
     assert at(731).state == TRUE and "over 2 years ago" in at(731).evidence
     assert at(730).state == FALSE
     assert negatives(place(review_dates=()), TODAY)["inactive_listing"].state == UNKNOWN
-    newest = negatives(place(review_dates=(dt.date(2020, 1, 1), TODAY)), TODAY)
+    newest = negatives(place(review_count=2, review_dates=(dt.date(2020, 1, 1), TODAY)), TODAY)
     assert newest["inactive_listing"].state == FALSE  # uses the newest date, not the oldest
+
+
+def test_inactive_listing_needs_every_review_visible():
+    old = (dt.date(2020, 1, 1), dt.date(2021, 1, 1))
+    sampled = negatives(place(review_count=9, review_dates=old), TODAY)["inactive_listing"]
+    assert sampled == Signal(UNKNOWN, "only 2 of 9 reviews visible")
+    all_visible = negatives(place(review_count=2, review_dates=old), TODAY)["inactive_listing"]
+    assert all_visible.state == TRUE
