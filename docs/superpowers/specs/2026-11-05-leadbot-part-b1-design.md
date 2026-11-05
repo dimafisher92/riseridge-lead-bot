@@ -25,7 +25,7 @@ Out of scope (later parts):
 - Part C: call scripts, email drips, audit email. Part D: niche retention analysis.
 
 Decisions taken in chat 2026-11-05:
-- Google Maps source: gosom/google-maps-scraper (the skill "google-maps-scraper", installed in `.claude/skills/`), run locally, no API key.
+- Google Maps source: gosom/google-maps-scraper, run locally, no API key. Its vendor skill "google-maps-scraper" is kept as reference documentation in `docs/vendor/google-maps-scraper/` (moved out of `.claude/skills/` so the nightly task cannot load it; `skills-lock.json` at the repo root still records the install).
 - Orchestration and LLM step: a Claude Code scheduled task on this PC (no Anthropic API key). Runs only while the Claude app is open; a missed night runs on the next launch.
 - Approach: code detects signals and scores (deterministic, tested); Claude only judges chains/franchises and writes text.
 - First run: niche Counselors / therapists; cities Austin, Dallas, Houston (TX).
@@ -85,7 +85,7 @@ Per niche: the money keyword template and query templates. Per city: suburb or n
 - Binary: `C:/Users/dimaf/tools/google-maps-scraper/gmaps-patched.exe`, path set in `.env` as `GMAPS_SCRAPER_EXE`. Built 2026-11-05 from gosom/google-maps-scraper v1.18.1 with gosom/scrapemate v1.4.0, removing the `--single-process` Chrome flag (`adapters/fetchers/jshttp/jshttp.go`), which crashes Chrome on Windows (upstream issue gosom/google-maps-scraper#322, open). The official v1.18.1 Windows exe returns "unexpected page type" and 0 rows here. Rebuild steps go in `docs/scraper-build.md`.
 - Flags: `-input <file> -results <file> -json -depth <n> -c 1 -lang en -exit-on-inactivity 3m`. Depth comes from seeds config (starts at 5).
 - Fields used: `title, category, categories, phone, web_site, owner, status, review_count, review_rating, user_reviews[].When, place_id, cid, link, complete_address, emails, input_id`.
-- The skill's own scripts are Docker-only and are not used. Its guidance is followed: conservative depth and concurrency, no proxy, keep partial output.
+- The vendor skill (reference only, `docs/vendor/google-maps-scraper/`): its scripts are Docker-only and are not used. Its guidance is followed: conservative depth and concurrency, no proxy, keep partial output.
 
 ### 3.3 Filters before enrichment
 

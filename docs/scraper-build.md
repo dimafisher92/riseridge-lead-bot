@@ -19,4 +19,6 @@ cd google-maps-scraper
 - Output: `C:/Users/dimaf/tools/google-maps-scraper/gmaps-patched.exe`, set as `GMAPS_SCRAPER_EXE` in `.env`.
 - First run downloads Playwright's Chrome (about 184 MB) to `%LOCALAPPDATA%/ms-playwright-go`.
 
+The scraper's vendor skill (gosom's `google-maps-scraper` SKILL.md, references and Docker scripts) is kept as reference documentation in `docs/vendor/google-maps-scraper/`, not in `.claude/skills/`, so the nightly task never loads it. `skills-lock.json` at the repo root records where it was installed from.
+
 To update: check that issue #322 is still open, re-clone at the new tags (match the scrapemate version in the scraper's `go.mod`), re-apply the two edits, rebuild, and run one small query before switching `.env`.
