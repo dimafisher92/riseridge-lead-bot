@@ -28,7 +28,8 @@ def test_unclaimed_new_listing_is_normalised():
     assert p.website == "https://brightpath.example.com/"
     assert p.review_count == 4
     assert p.rating == 5.0
-    assert p.review_dates == (dt.date(2026, 9, 20), dt.date(2026, 10, 2), dt.date(2026, 10, 25))
+    assert p.review_dates == (dt.date(2026, 9, 20), dt.date(2026, 10, 2), dt.date(2026, 10, 25),
+                              dt.date(2026, 10, 30))
     assert p.email is None
 
 

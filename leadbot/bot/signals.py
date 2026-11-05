@@ -75,15 +75,21 @@ def _site(place, enrich):
 def _new(place, enrich, today):
     if enrich.registered and (today - enrich.registered).days < NEW_DOMAIN_DAYS:
         return Signal(TRUE, f"domain registered {enrich.registered.isoformat()}")
-    if place.review_dates and place.review_count <= NEW_MAX_REVIEWS:
-        oldest = place.review_dates[0]
-        if (today - oldest).days <= NEW_REVIEW_DAYS:
-            return Signal(TRUE, f"{place.review_count} reviews, oldest visible {oldest.isoformat()}")
-        return Signal(FALSE, f"oldest visible review {oldest.isoformat()}")
-    if place.review_count > NEW_MAX_REVIEWS:
-        return Signal(FALSE, f"{place.review_count} reviews")
+    count, dates = place.review_count, place.review_dates
+    if count > NEW_MAX_REVIEWS:
+        return Signal(FALSE, f"{count} reviews")
+    if dates and count >= 1:
+        oldest = dates[0]
+        if (today - oldest).days > NEW_REVIEW_DAYS:
+            return Signal(FALSE, f"oldest visible review {oldest.isoformat()}")
+        # Maps shows only some reviews; an older hidden one would make this a false TRUE.
+        if len(dates) < count:
+            return Signal(UNKNOWN, f"only {len(dates)} of {count} reviews visible")
+        return Signal(TRUE, f"{count} reviews, oldest {oldest.isoformat()}")
     if enrich.registered:
         return Signal(FALSE, f"domain registered {enrich.registered.isoformat()}")
+    if count:
+        return Signal(UNKNOWN, "no review dates and no domain date")
     return Signal(UNKNOWN, "no reviews and no domain date")
 
 

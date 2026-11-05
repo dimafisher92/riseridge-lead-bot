@@ -112,7 +112,7 @@ Each signal is TRUE, FALSE or UNKNOWN, with a one-line evidence string. UNKNOWN 
 | --- | --- |
 | `gbp_unverified_or_suspended` | `owner` is empty. GBP Status = Unverified. "Suspended suspected" is not detectable from Maps data in B1 and is never set. |
 | `broken_website` | no website, site unreachable, or at least 2 of: no form, no `tel:` link, no tracking tag, PageSpeed mobile under 40. |
-| `new_business` | (oldest visible review is at most 3 months old AND `review_count` ≤ 15) OR domain registered under 6 months ago. |
+| `new_business` | domain registered under 6 months (183 days) ago, OR (every review is visible, i.e. the dated reviews number at least `review_count` ≥ 1, AND the oldest is at most 92 days old AND `review_count` ≤ 15). When only some reviews are visible and the domain is not recent, the signal is UNKNOWN ("only N of M reviews visible"): Maps shows a sample, and a hidden older review would make TRUE wrong. More than 15 reviews, or an oldest visible review over 92 days old, is FALSE. |
 | `rank_gap` | the place's position in the money keyword query is worse than 3, or it does not appear in that query's results (then evidence says "not in the top N for <keyword>"). |
 | `competitor_gap` | average `review_count` of the top 3 in the money keyword query is at least 3× this place's. |
 | `google_ads_spend`, `meta_ads_active`, `technical_debt` | always UNKNOWN in B1. |

@@ -1,8 +1,8 @@
 import datetime as dt
 
 from leadbot.bot.scrape import Place
-from leadbot.bot.signals import (FALSE, TRUE, UNKNOWN, Enrichment, RankInfo, detect, gbp_status,
-                                 rank_info, true_flags)
+from leadbot.bot.signals import (FALSE, TRUE, UNKNOWN, Enrichment, RankInfo, Signal, detect,
+                                 gbp_status, rank_info, true_flags)
 from leadbot.bot.site_check import SiteCheck
 
 TODAY = dt.date(2026, 11, 6)
@@ -45,7 +45,7 @@ def test_broken_website_cases():
 
 
 def test_new_business_cases():
-    recent = place(review_count=4, review_dates=(dt.date(2026, 9, 1), dt.date(2026, 10, 1)))
+    recent = place(review_count=2, review_dates=(dt.date(2026, 9, 1), dt.date(2026, 10, 1)))
     assert sig(recent)["new_business"].state == TRUE
     old = place(review_count=4, review_dates=(dt.date(2026, 7, 1),))
     assert sig(old)["new_business"].state == FALSE
@@ -55,7 +55,29 @@ def test_new_business_cases():
     assert by_domain["new_business"].state == TRUE
     assert "2026-08-01" in by_domain["new_business"].evidence
     none = place(review_count=0, review_dates=())
-    assert sig(none)["new_business"].state == UNKNOWN
+    assert sig(none)["new_business"] == Signal(UNKNOWN, "no reviews and no domain date")
+
+
+def test_new_business_needs_every_review_visible():
+    partial = place(review_count=4, review_dates=(dt.date(2026, 9, 1), dt.date(2026, 10, 1)))
+    assert sig(partial)["new_business"] == Signal(UNKNOWN, "only 2 of 4 reviews visible")
+    old_domain = Enrichment(GOOD_SITE, registered=dt.date(2015, 1, 1))
+    assert sig(partial, old_domain)["new_business"].state == UNKNOWN
+    new_domain = Enrichment(GOOD_SITE, registered=dt.date(2026, 8, 1))
+    assert sig(partial, new_domain)["new_business"].state == TRUE  # domain wins regardless
+
+
+def test_new_business_review_window_and_cap():
+    def at(days, count=1):
+        dates = tuple(TODAY - dt.timedelta(days=days) for _ in range(count))
+        return sig(place(review_count=count, review_dates=dates))["new_business"].state
+    assert at(92) == TRUE and at(93) == FALSE
+    assert at(10, count=15) == TRUE and at(10, count=16) == FALSE
+
+
+def test_new_business_reviews_without_dates():
+    undated = place(review_count=3, review_dates=())
+    assert sig(undated)["new_business"] == Signal(UNKNOWN, "no review dates and no domain date")
 
 
 def test_rank_gap_cases():
