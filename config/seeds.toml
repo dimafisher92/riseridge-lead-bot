@@ -1,0 +1,22 @@
+# Part B1 seeds (spec 3.1). live = false keeps every push a dry run.
+live = false
+scraper_depth = 5
+max_enrich_per_city = 150
+seen_days = 30
+
+[niches."Counselors / therapists"]
+money_query = "therapist in {city}"
+money_keyword = "therapist {city_name}"
+queries = ["counseling in {area}", "couples counseling {city}", "psychologist in {city}"]
+
+[cities."Austin, TX"]
+areas = ["Austin, TX", "Round Rock, TX", "Cedar Park, TX"]
+area_codes = ["512", "737"]
+
+[cities."Dallas, TX"]
+areas = ["Dallas, TX", "Plano, TX", "Irving, TX"]
+area_codes = ["214", "469", "972", "945"]
+
+[cities."Houston, TX"]
+areas = ["Houston, TX", "Katy, TX", "Sugar Land, TX"]
+area_codes = ["713", "281", "832", "346"]
