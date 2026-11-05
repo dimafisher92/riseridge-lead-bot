@@ -2295,3 +2295,28 @@ Why: in the Austin dry run (`docs/b1-live-notes.md`) `rank_gap` was TRUE for 147
 - cli: the existing live-push test still passes (payload unchanged).
 
 Commit in one or two commits ("feat(bot): calibrate rank, competitor and website signals; inactive-listing negative").
+
+---
+
+### Task 14: Go-live blockers (added 2026-11-05, user approved)
+
+Why: residuals parked after the final-review fix wave (`.superpowers/sdd/.../progress.md`, "Parked for Task 11"). The first one loses leads; the others fail closed today but cost a night or a month.
+
+**Files:** `leadbot/bot/collect.py`, `leadbot/bot/cli.py`, `leadbot/bot/candidates.py` (only if needed for reading lines), tests in `tests/test_bot_collect.py` and `tests/test_bot_cli.py`, spec sections 3.3 and 5. Part A stays unchanged.
+
+**Rules (exact):**
+
+1. **Our own leads are never lost to the `ghl_contact` filter.** `Deps` gains `get_contact` (contact_id -> dict | None; real: `client.get_contact`). In `_drop_reason`, when `find_contact` returns a contact, read its tags with `deps.get_contact(found["id"])`. If the tags include `bot-lead`, do NOT drop the place: it is our own lead (possibly a contact whose deal was never created because a push died midway); let it continue so part A's `push_lead` creates the missing deal, returns `existing` when one is open, or returns `duplicate` for clients and recent losses. Any other existing contact is still dropped as `ghl_contact`. If `get_contact` raises (not GHLAuthError, which is re-raised), drop as `ghl_lookup_failed` like the lookup itself. Note: places already pushed are skipped for 30 days by the seen store, so this only re-admits a bot lead after that window or after a failed push.
+2. **No exception kills a live push batch.** In `cmd_push`, around each `push_lead` call: `GHLAuthError` keeps the current exit-3 behaviour; any other `Exception` (not just OSError) is recorded as outcome `failed` with message `f"{type(exc).__name__}: {exc}"` and the loop continues; push_report.json is always written and seen marks applied. A failed lead is not marked seen (unchanged).
+3. **Malformed qualified line.** `cmd_push` reads qualified.jsonl line by line: a line that is not valid JSON (or not a JSON object) is recorded as outcome `rejected` with message `malformed line <n>` and the other lines are still processed. (candidates.jsonl stays strict: a malformed candidates file is a collect bug and still stops the push.)
+4. **Live push checks DNC age.** A live `cmd_push` refuses (SystemExit, no push, message naming the age) when the DNC files loaded for the live re-check are older than `DNC_MAX_AGE_DAYS`, the same rule as `cmd_collect`. Factor the age check into one helper used by both.
+5. **`dnc_area_not_loaded` drops are not marked seen**, so adding an area code's file brings those places back the next night: add it to `UNSEEN_DROPS`.
+
+**Tests (each written first, seen failing):**
+- collect: an existing contact tagged `bot-lead` is kept as a candidate; an existing contact without that tag is dropped `ghl_contact`; `get_contact` raising GHLError gives `ghl_lookup_failed`; `get_contact` raising GHLAuthError propagates.
+- cli: `push_lead` raising `KeyError` for one lead records `failed` (message starts "KeyError") and the next lead is still pushed, report written; a qualified file with one malformed line and one valid line gives one `rejected` ("malformed line 1") and one pushed/would_push; live push with DNC files older than 31 days exits with the age message and pushes nothing; `dnc_area_not_loaded` drop is not marked seen.
+- Update existing tests that build `Deps(...)` for the new `get_contact` field (deliberately; say so in the report).
+
+Also update the nightly skill only if a command or exit code changes (none expected).
+
+Commit: "fix(bot): go-live blockers: re-admit own leads, no batch-killing exceptions, malformed lines, DNC age on push".
