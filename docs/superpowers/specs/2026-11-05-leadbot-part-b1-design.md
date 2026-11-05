@@ -30,6 +30,7 @@ Decisions taken in chat 2026-11-05:
 - Approach: code detects signals and scores (deterministic, tested); Claude only judges chains/franchises and writes text.
 - First run: niche Counselors / therapists; cities Austin, Dallas, Houston (TX).
 - Tier thresholds stay as in the SOP (Hot 70+, Warm 45-69, Cold under 45) although B1 cannot reach the ad points.
+  - 2026-11-05, after the calibrated Austin dry run, the user lowered the B1 Warm cut to 30 (Hot 70 unchanged) until B2 adds the ad signals.
 - DNC: scrub in B1. The user registers with the FTC and saves the area-code files; go-live waits for them.
 
 ## 2. Pipeline
@@ -123,7 +124,7 @@ Relative review ages ("2 weeks ago", "Edited a month ago", "a year ago") are par
 
 ### 3.6 Scoring (`config/scoring.toml`)
 
-Weights from SOP Step 4: gbp 25, google ads 20 (+10 over $3k/month), meta ads 10, broken site 15, new business 15, rank gap 10, technical debt 5, competitor gap 5, retention niche +5 (Counselors / therapists listed), negative −30 per TRUE negative (`negative_signal`, applied after the positives and the retention bonus, floor 0). Capped at 100. Tiers: Hot 70+, Warm 45-69, Cold under 45. `primary_signal` = the GHL category of the highest-weight TRUE signal (ties: table order). B1 maximum is 75.
+Weights from SOP Step 4: gbp 25, google ads 20 (+10 over $3k/month), meta ads 10, broken site 15, new business 15, rank gap 10, technical debt 5, competitor gap 5, retention niche +5 (Counselors / therapists listed), negative −30 per TRUE negative (`negative_signal`, applied after the positives and the retention bonus, floor 0). Capped at 100. Tiers: Hot 70+, Warm 30-69 in B1 (SOP: 45-69; restored with B2), Cold under 30. `primary_signal` = the GHL category of the highest-weight TRUE signal (ties: table order). B1 maximum is 75.
 
 ### 3.7 Candidate record
 

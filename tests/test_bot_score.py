@@ -13,7 +13,7 @@ def test_weights_match_sop():
         "google_ads_spend_over_3k_bonus": 10, "meta_ads_active": 10, "broken_website": 15,
         "new_business": 15, "rank_gap": 10, "technical_debt": 5, "competitor_gap": 5,
         "retention_niche": 5, "negative_signal": 30}
-    assert (S.hot, S.warm) == (70, 45)
+    assert (S.hot, S.warm) == (70, 30)
 
 
 def test_b1_maximum_is_75():
@@ -34,7 +34,7 @@ def test_score_is_capped_at_100():
     assert lead_score(set(SIGNAL_ORDER), NICHE, S, ads_spend=5000) == 100
 
 
-@pytest.mark.parametrize("score,tier", [(0, "Cold"), (44, "Cold"), (45, "Warm"),
+@pytest.mark.parametrize("score,tier", [(0, "Cold"), (29, "Cold"), (30, "Warm"),
                                         (69, "Warm"), (70, "Hot"), (100, "Hot")])
 def test_tier_boundaries(score, tier):
     assert lead_tier(score, S) == tier

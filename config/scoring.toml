@@ -15,5 +15,8 @@ retention_niche = 5
 negative_signal = 30  # subtracted once per TRUE negative (inactive_listing)
 
 [tiers]
+# B1 value set 2026-11-05 by the user, after the calibrated Austin dry run (docs/b1-live-notes.md):
+# without ad signals an active unclaimed listing scores 30, so the SOP cut-off of 45 gave 1 Warm lead of 150.
+# The SOP value 45 returns when B2 adds the ad signals.
 hot = 70
-warm = 45
+warm = 30

@@ -19,7 +19,7 @@
 - Test data is fictional: phones `+1 512-555-01NN`, websites and emails under `example.com`, names suffixed "(fictional)".
 - Scraper flags: `-json -depth <seeds depth> -c 1 -lang en -exit-on-inactivity 3m`; one worker always.
 - Signals are `TRUE` / `FALSE` / `UNKNOWN`; only `TRUE` scores. `google_ads_spend`, `meta_ads_active`, `technical_debt` are always `UNKNOWN` in B1.
-- Weights (SOP Step 4): gbp 25, google ads 20 (+10 over $3,000/month), meta ads 10, broken site 15, new business 15, rank gap 10, technical debt 5, competitor gap 5, retention niche +5; cap 100. Tiers: Hot ≥ 70, Warm ≥ 45, else Cold.
+- Weights (SOP Step 4): gbp 25, google ads 20 (+10 over $3,000/month), meta ads 10, broken site 15, new business 15, rank gap 10, technical debt 5, competitor gap 5, retention niche +5; cap 100. Tiers: Hot ≥ 70, Warm ≥ 45, else Cold. (B1: Warm ≥ 30 from 2026-11-05, user decision)
 - Tie order for the primary signal: `gbp_unverified_or_suspended, google_ads_spend, meta_ads_active, broken_website, new_business, rank_gap, technical_debt, competitor_gap`.
 - `run_id` = `<YYYY-MM-DD>-<slug(niche)>-<slug(city)>`; `bot_run_id` = `<run_id>-<NNNN>`.
 - A live push requires `live = true` in `config/seeds.toml` AND a run collected with the DNC check. `--no-dnc` runs can only be dry-run.
