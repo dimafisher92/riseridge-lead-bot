@@ -22,3 +22,23 @@ Command: `collect --no-dnc` (no DNC files yet), qualify by hand following `.clau
 1. Rank and competitor gap: score them only when they separate leads (for example rank_gap only when the place appears in the money results beyond the map pack, competitor gap against the top 3 independents), or reduce their weight.
 2. Broken website: a fetch that is refused (HTTP 403/429, bot walls) becomes UNKNOWN, not "did not load"; consider requiring "no form AND no call link" rather than any two of four.
 3. Inactive practices: consider a negative signal when the newest review is older than about 2 years and the listing is unclaimed.
+
+## Austin dry run after calibration (2026-11-05, same run_id; first run kept as `state/runs/2026-11-05-austin-before-calibration`)
+
+Task 12 rules (rank gap only #4-#20, competitor gap against independents only for places in the money results, refused fetches UNKNOWN and a loaded site broken only with no form AND no call link, inactive listing −30 only when every review is visible and the newest is over 2 years old).
+
+| of 150 enriched | before | after |
+| --- | --- | --- |
+| rank_gap TRUE | 147 | 12 |
+| competitor_gap TRUE | 130 | 16 |
+| broken_website TRUE | 84 | 42 (10 more UNKNOWN: refused by the site) |
+| unclaimed | 9 | 8 |
+| inactive_listing (−30) | – | 21 |
+| Warm | 10 | 1 (Rose Psychology Practice, 45) |
+| needs text | 56 | 48; 45 would_push after 3 chain drops |
+
+Scraper results differ between runs (236 vs 239 scraped; Providence Counseling and Sydney W. Paver were outside the 150 enriched this time). Of the 8 unclaimed listings, 4 are inactive (newest review 2017-2024) and 3 have a form or call link on their site, so they score 30 (Cold).
+
+Effect: the signals now separate leads, but B1 yields about one call-ready (Warm) lead per city per night, because without ad signals an active unclaimed listing scores 30 and needs a broken site or a new business on top. Decision needed before go-live: scale volume (more areas/cities, a higher nightly cap), lower the B1 Warm threshold, or wait for B2's ad signals.
+
+Note: the chain check in this test was a quick name rule and wrongly dropped two practices with descriptive suffixes ("- Couples & Individual Counselor", "- Envisioned Counseling"); in the nightly run Claude judges chains from name, website and evidence.
