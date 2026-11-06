@@ -75,3 +75,5 @@ Both published edits predate the part A live tests (run after 20:58), which show
 - Seen store: 49 created, 97 cold_no_email, 4 franchise_or_chain, 10 no_phone, 23 shared_phone.
 
 Finding: 2026-11-07 is a Saturday. The Route workflow's Warm task delay (two days) does not skip weekends, so a Thursday-night push makes Warm tasks due on Saturday. Decide whether the Route task should skip weekends before the nightly schedule starts.
+
+Fixed 2026-11-06 (user decision): "Skip weekends" switched on for the Warm task in [Lead Bot] Route; the Hot task already had it. Reload confirmed: a Warm task created on Friday is now due Monday 10:00. The 4 tasks created on 2026-11-05 keep their Saturday due date.

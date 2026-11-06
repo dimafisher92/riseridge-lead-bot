@@ -32,7 +32,7 @@ URL: `/v2/location/qxOMqnU9zjuxJ3xHHo90/automation/workflow/6e777db8-c587-46cb-8
    - Hot: Add task "Call: {Primary Signal}", assigned to the contact's assigned user, due 1 day at 10:00 AM.
    - None: same task, due 2 days at 10:00 AM.
 
-Differences from the spec: one rep, so no niche branches; the notification is in-app, not email; "Skip weekends" on the Hot task may not have saved (check in the test); task titles use the merge picker because typed `{{...}}` tags are dropped by the title box.
+Differences from the spec: one rep, so no niche branches; the notification is in-app, not email; "Skip weekends" is on for both tasks (Hot confirmed 2026-11-06; Warm switched on 2026-11-06 after the first live push made Warm tasks due on a Saturday, workflow saved and still published); task titles use the merge picker because typed `{{...}}` tags are dropped by the title box.
 
 ### [Lead Bot] Outcome (published, built 2026-11-04)
 
