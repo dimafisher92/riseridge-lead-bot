@@ -77,3 +77,8 @@ Both published edits predate the part A live tests (run after 20:58), which show
 Finding: 2026-11-07 is a Saturday. The Route workflow's Warm task delay (two days) does not skip weekends, so a Thursday-night push makes Warm tasks due on Saturday. Decide whether the Route task should skip weekends before the nightly schedule starts.
 
 Fixed 2026-11-06 (user decision): "Skip weekends" switched on for the Warm task in [Lead Bot] Route; the Hot task already had it. Reload confirmed: a Warm task created on Friday is now due Monday 10:00. The 4 Warm tasks created on 2026-11-05 were moved by API (`PUT /contacts/{id}/tasks/{taskId}`, dueDate only) from Saturday 7 Nov to Monday 2026-11-09 10:00 EST; re-read confirmed, titles and assignee unchanged.
+
+## Nightly schedule (2026-11-06)
+
+Claude scheduled task `leadbot-nightly` (C:/Users/dimaf/.claude/scheduled-tasks/leadbot-nightly/SKILL.md): every day at 02:00 local time (dispatched about 02:09), Austin only, live. The prompt makes the run read and follow `.claude/skills/leadbot-nightly/SKILL.md` and limits it to "Austin, TX" until Dallas and Houston have had a dry run. It was saved in Auto mode: no permission prompts, a classifier blocks unsafe actions, so no `.claude/settings.json` allowlist was added. It runs only while the Claude app is open; a missed run starts at the next launch. Austin had 232 places in this run, and leads are not collected again for 30 days (`seen_days`), so expect fewer new Austin leads each night.
+

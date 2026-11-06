@@ -149,7 +149,7 @@ def test_money_query_is_not_repeated(tmp_path):
     assert p.queries == ("hvac in Austin, TX",)
 ```
 
-- [x] **Step 3: Run to verify failure** Done 2026-11-05 (84da189).
+- [ ] **Step 3: Run to verify failure**
 
 Run: `python -m pytest tests/test_bot_seeds.py -q`
 Expected: FAIL with `ModuleNotFoundError: No module named 'leadbot.bot'`.
@@ -2255,10 +2255,10 @@ Show the user every Hot and Warm lead: business name, signals with evidence, sco
 
 - [x] **Step 1: DNC files. Skipped by user decision 2026-11-05: `dnc_check = false` in `config/seeds.toml`; the steps below stay valid if it is switched back on.** The user registers for an FTC National DNC Subscription Account Number and saves the area-code files in `state/dnc/`. Check the format without printing numbers: count numbers per area code with `python -c "from leadbot.bot.dnc import load_dnc; from collections import Counter; print(Counter(n[:3] for n in load_dnc().numbers))"`. If the counts are zero or wrong, adapt `dnc._ten_digits` to the real layout with a test built from a fictional line in that layout.
 - [x] **Step 2: Existing-automation check (observation 0087).** Done 2026-11-05: no new published workflow touches bot leads; one draft to watch (see `docs/b1-live-notes.md`). A live push creates real contacts tagged `bot-lead` and opportunities in "Bot Leads – SEO", the same events the part A tests produced without side effects. List published workflows through the API (`GET /workflows/`) and show the user any published since 2026-11-04 before going on.
-- [ ] **Step 3: Switch on.** With the user's yes, set `live = true` in `config/seeds.toml` and commit.
+- [x] **Step 3: Switch on.** Done 2026-11-05 (84da189). With the user's yes, set `live = true` in `config/seeds.toml` and commit.
 - [x] **Step 4: First live push, Austin only.** Run the nightly skill for Austin alone (collect with DNC, qualify, push). Then check in GHL: contacts, owner Sergey, Bot Leads deals in New, call tasks. Every Hot lead is checked by hand with the user (SOP week 2). Done 2026-11-05: 49 created, QA in `docs/b1-live-notes.md`.
-- [ ] **Step 5: Schedule.** With the user's yes, create the Claude Code scheduled task `leadbot-nightly`, cron `0 2 * * *` (local time), prompt: "In D:/Claude Code/riseridge-leadbot, run the project skill .claude/skills/leadbot-nightly/SKILL.md for every city in config/seeds.toml and report as that skill says." Tell the user it runs only while the Claude app is open.
-- [ ] **Step 6: Record** the go-live in `docs/b1-live-notes.md` and commit.
+- [x] **Step 5: Schedule.** Done 2026-11-06: task `leadbot-nightly`, cron `0 2 * * *`, saved in Auto mode (so no allowlist was added), scope Austin only until Dallas and Houston get a dry run. With the user's yes, create the Claude Code scheduled task `leadbot-nightly`, cron `0 2 * * *` (local time), prompt: "In D:/Claude Code/riseridge-leadbot, run the project skill .claude/skills/leadbot-nightly/SKILL.md for every city in config/seeds.toml and report as that skill says." Tell the user it runs only while the Claude app is open.
+- [x] **Step 6: Record** (done 2026-11-06) the go-live in `docs/b1-live-notes.md` and commit.
 
 ---
 
