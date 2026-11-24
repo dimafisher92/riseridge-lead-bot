@@ -12,6 +12,21 @@ money_query = "therapist in {city}"
 money_keyword = "therapist {city_name}"
 queries = ["counseling in {area}", "couples counseling {city}", "psychologist in {city}"]
 
+[niches."Roofing"]
+money_query = "roofer in {city}"
+money_keyword = "roofer {city_name}"
+queries = ["roofing contractor in {area}", "roof repair {city}", "roof replacement {city}"]
+
+[niches."Personal injury lawyers"]
+money_query = "personal injury lawyer in {city}"
+money_keyword = "personal injury lawyer {city_name}"
+queries = ["personal injury attorney in {area}", "car accident lawyer {city}"]
+
+[niches."Med spas / dental"]
+money_query = "med spa in {city}"
+money_keyword = "med spa {city_name}"
+queries = ["med spa in {area}", "dentist in {area}", "cosmetic dentist {city}"]
+
 [cities."Austin, TX"]
 areas = ["Austin, TX", "Round Rock, TX", "Cedar Park, TX"]
 area_codes = ["512", "737"]
@@ -23,3 +38,11 @@ area_codes = ["214", "469", "972", "945"]
 [cities."Houston, TX"]
 areas = ["Houston, TX", "Katy, TX", "Sugar Land, TX"]
 area_codes = ["713", "281", "832", "346"]
+
+[cities."San Antonio, TX"]
+areas = ["San Antonio, TX", "New Braunfels, TX", "Boerne, TX"]
+area_codes = ["210", "726", "830"]
+
+[cities."Fort Worth, TX"]
+areas = ["Fort Worth, TX", "Arlington, TX", "Keller, TX"]
+area_codes = ["817", "682"]

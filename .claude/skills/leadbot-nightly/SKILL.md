@@ -1,6 +1,6 @@
 ---
 name: leadbot-nightly
-description: Nightly RiseRidge lead bot run (part B1). Collects counselor/therapist leads per city, writes the audit summary and call opener for each lead that needs one, then pushes to GoHighLevel or dry-runs. Use when the scheduled task "leadbot-nightly" fires or the user asks to run the lead bot.
+description: Nightly RiseRidge lead bot run (part B1). Collects leads for one niche per city, writes the audit summary and call opener for each lead that needs one, then pushes to GoHighLevel or dry-runs. Use when the scheduled task "leadbot-nightly" fires or the user asks to run the lead bot.
 ---
 
 # Lead bot nightly run
@@ -19,10 +19,10 @@ Run sections 1 to 3 for one city at a time, in the file order of `config/seeds.t
 
 ## 1. Collect, once per city
 
-Cities: every `[cities."..."]` table in `config/seeds.toml`, in file order. Niche: `Counselors / therapists`.
+Niche: the one the task prompt names (one of the `[niches."..."]` tables in `config/seeds.toml`, spelled exactly). Cities: the ones the prompt names, else every `[cities."..."]` table in `config/seeds.toml`, in file order. If the prompt names no niche, stop and report that.
 
 ```
-python -m leadbot.bot collect --niche "Counselors / therapists" --city "<city>"
+python -m leadbot.bot collect --niche "<niche>" --city "<city>"
 ```
 
 - Exit 0: continue with that city.
