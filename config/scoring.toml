@@ -1,0 +1,22 @@
+# SOP Step 4 weights (spec 3.6). Re-weight monthly against closed deals.
+retention_niches = ["Counselors / therapists"]
+
+[weights]
+gbp_unverified_or_suspended = 25
+google_ads_spend = 20
+google_ads_spend_over_3k_bonus = 10
+meta_ads_active = 10
+broken_website = 15
+new_business = 15
+rank_gap = 10
+technical_debt = 5
+competitor_gap = 5
+retention_niche = 5
+negative_signal = 30  # subtracted once per TRUE negative (inactive_listing)
+
+[tiers]
+# B1 value set 2026-11-05 by the user, after the calibrated Austin dry run (docs/b1-live-notes.md):
+# without ad signals an active unclaimed listing scores 30, so the SOP cut-off of 45 gave 1 Warm lead of 150.
+# The SOP value 45 returns when B2 adds the ad signals.
+hot = 70
+warm = 30
