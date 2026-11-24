@@ -155,3 +155,50 @@ def test_run_scraper_passes_bad_row_count(tmp_path):
 
     places = run_scraper(["q"], str(tmp_path), "money", exe="gmaps.exe", depth=1, runner=runner)
     assert len(places) == 1 and places.bad_rows == 1
+
+
+from leadbot.bot.scrape import STALLED, guarded_run  # noqa: E402
+
+
+class StalledRunner:
+    """Writes results and a log, then reports a stall, like the 23 Nov hang."""
+    def __init__(self, last_log_line):
+        self.last = last_log_line
+
+    def __call__(self, args, stdout, stderr, timeout):
+        shutil.copy(FIXTURE, args[args.index("-results") + 1])
+        stdout.write('{"message":"scrapemate stats"}\n' + self.last + "\n")
+        stdout.flush()
+        return subprocess.CompletedProcess(args, STALLED)
+
+
+def test_stall_after_inactivity_exit_keeps_results(tmp_path):
+    runner = StalledRunner('{"error":"inactivity timeout","message":"exiting because of inactivity"}')
+    places = run_scraper(["q"], str(tmp_path), "money", exe="gmaps.exe", depth=1, runner=runner)
+    assert len(places) == 6
+
+
+def test_stall_mid_run_raises(tmp_path):
+    with pytest.raises(ScrapeError, match="stalled"):
+        run_scraper(["q"], str(tmp_path), "money", exe="gmaps.exe", depth=1,
+                    runner=StalledRunner('{"message":"scrapemate stats"}'))
+
+
+def test_guarded_run_kills_a_silent_process(tmp_path):
+    import sys
+    import time
+    log = tmp_path / "log.txt"
+    args = [sys.executable, "-c", "print('started', flush=True); import time; time.sleep(60)"]
+    t0 = time.monotonic()
+    with open(log, "w", encoding="utf-8") as fh:
+        proc = guarded_run(args, stdout=fh, stderr=subprocess.STDOUT, timeout=120, stall=1.5, poll=0.1)
+    assert proc.returncode == STALLED
+    assert time.monotonic() - t0 < 30
+
+
+def test_guarded_run_returns_exit_code(tmp_path):
+    import sys
+    with open(tmp_path / "log.txt", "w", encoding="utf-8") as fh:
+        proc = guarded_run([sys.executable, "-c", "raise SystemExit(3)"], stdout=fh,
+                           stderr=subprocess.STDOUT, timeout=60, stall=30, poll=0.1)
+    assert proc.returncode == 3

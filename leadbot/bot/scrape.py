@@ -5,6 +5,7 @@ import json
 import os
 import re
 import subprocess
+import time
 from dataclasses import dataclass
 from urllib.parse import urlsplit, urlunsplit
 
@@ -118,7 +119,55 @@ def read_results(path):
     return places
 
 
-def run_scraper(queries, out_dir, name, *, exe, depth, runner=subprocess.run, timeout=3 * 3600):
+STALLED = -999  # guarded_run's return code when it killed a silent scraper
+STALL_SECONDS = 600  # the scraper logs stats every minute while it works
+INACTIVITY_EXIT = "exiting because of inactivity"
+
+
+def _kill_tree(proc):
+    """Kill the scraper and the Chrome processes it started."""
+    if os.name == "nt":
+        subprocess.run(["taskkill", "/PID", str(proc.pid), "/T", "/F"],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    else:
+        proc.kill()
+    try:
+        proc.wait(timeout=30)
+    except subprocess.TimeoutExpired:
+        pass
+
+
+def guarded_run(args, *, stdout, stderr, timeout, stall=STALL_SECONDS, poll=5):
+    """subprocess.run with a watchdog: a process whose log (stdout) stops growing for
+    `stall` seconds is killed and reported as STALLED (on 2026-11-23 the scraper logged
+    its inactivity exit and then hung until the 3-hour timeout)."""
+    proc = subprocess.Popen(args, stdout=stdout, stderr=stderr)
+    start = last_change = time.monotonic()
+    last_size = -1
+    while True:
+        rc = proc.poll()
+        if rc is not None:
+            return subprocess.CompletedProcess(args, rc)
+        now = time.monotonic()
+        if now - start > timeout:
+            _kill_tree(proc)
+            raise subprocess.TimeoutExpired(args, timeout)
+        size = os.fstat(stdout.fileno()).st_size
+        if size != last_size:
+            last_size, last_change = size, now
+        elif now - last_change > stall:
+            _kill_tree(proc)
+            return subprocess.CompletedProcess(args, STALLED)
+        time.sleep(poll)
+
+
+def _last_line(path):
+    with open(path, encoding="utf-8", errors="replace") as fh:
+        lines = [line for line in fh.read().splitlines() if line.strip()]
+    return lines[-1] if lines else ""
+
+
+def run_scraper(queries, out_dir, name, *, exe, depth, runner=guarded_run, timeout=3 * 3600):
     os.makedirs(out_dir, exist_ok=True)
     query_file = os.path.join(out_dir, f"{name}.queries.txt")
     results = os.path.join(out_dir, f"{name}.raw.jsonl")
@@ -134,6 +183,11 @@ def run_scraper(queries, out_dir, name, *, exe, depth, runner=subprocess.run, ti
             proc = runner(args, stdout=fh, stderr=subprocess.STDOUT, timeout=timeout)
         except subprocess.TimeoutExpired as exc:
             raise ScrapeError(f"scraper timed out after {timeout}s; see {log}") from exc
-    if proc.returncode != 0:
+    if proc.returncode == STALLED:
+        if INACTIVITY_EXIT not in _last_line(log):
+            raise ScrapeError(f"scraper stalled (no log output for {STALL_SECONDS}s) and was "
+                              f"stopped; see {log}")
+        # it had finished and logged its inactivity exit, then hung: keep its results
+    elif proc.returncode != 0:
         raise ScrapeError(f"scraper exited {proc.returncode}; see {log}")
     return read_results(results)
