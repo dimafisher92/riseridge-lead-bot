@@ -82,3 +82,21 @@ Fixed 2026-11-06 (user decision): "Skip weekends" switched on for the Warm task 
 
 Claude scheduled task `leadbot-nightly` (C:/Users/dimaf/.claude/scheduled-tasks/leadbot-nightly/SKILL.md): every day at 02:00 local time (dispatched about 02:09), Austin only, live. The prompt makes the run read and follow `.claude/skills/leadbot-nightly/SKILL.md` and limits it to "Austin, TX" until Dallas and Houston have had a dry run. It was saved in Auto mode: no permission prompts, a classifier blocks unsafe actions, so no `.claude/settings.json` allowlist was added. It runs only while the Claude app is open; a missed run starts at the next launch. Austin had 232 places in this run, and leads are not collected again for 30 days (`seen_days`), so expect fewer new Austin leads each night.
 
+
+## Expansion: 4 niches x 5 Texas cities (2026-11-24)
+
+Why: Austin counselors were nearly exhausted (new leads per run 49, 25, 8, 4, 2) and the task ran on only 6 of 19 nights (it needs the app open). The 23 Nov run failed: the scraper logged its inactivity exit and then hung until the 3-hour timeout; fixed by a 10-minute log-silence watchdog (9b12402).
+
+Config (496f6ff): niches Roofing, Personal injury lawyers, Med spas / dental (GHL Niche options already existed); cities San Antonio and Fort Worth added; the nightly skill now takes its niche from the task prompt.
+
+Dallas dry runs (no GHL writes, seen store unchanged):
+
+| niche | scraped | Warm | Cold | need text | chain/wrong-niche drops | would_push |
+| --- | --- | --- | --- | --- | --- | --- |
+| Roofing | 200 | 5 | 145 | 43 | 3 (multi-city location pages) | 40 |
+| Personal injury lawyers | 181 | 1 | 149 | 21 | 3 (2 multi-office, 1 immigration firm) | 17 (+1 opener over 30 words) |
+| Med spas / dental | 245 | 1 | 149 | 29 | 4 (dermani, Restore, 2 dental groups) | 24 (+1 opener over 30 words) |
+
+Lawyers and med spas almost always claim their Google listing, so they yield mostly Cold leads with an email; roofing yields the most Warm leads.
+
+Scheduled tasks (all live, all 5 cities, local time): leadbot-nightly = Counselors 01:00 (Auto mode), leadbot-roofing 02:30, leadbot-pi-lawyers 04:00, leadbot-medspa-dental 05:30 (these three were saved without Auto mode and may pause on permission prompts until set in the app). If the app is closed overnight, missed tasks start together at the next launch.
